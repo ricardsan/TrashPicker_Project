@@ -1,0 +1,33 @@
+
+
+python camera/segmentation_realsense.py --model yolo8 --variant original-finetune-augment --rosbag rosbags/20261016_231841_clutter_med.db3 --conf 0.4 --plot --quiet --no-masks
+python camera/segmentation_realsense.py --model yolo8 --variant original-finetune-augment --rosbag rosbags/20261016_232523_clutter_high2.db3 --conf 0.4 --plot --quiet --no-masks
+python camera/segmentation_realsense.py --model yolo8 --variant original-finetune-augment --rosbag rosbags/20261016_233733_stacked.db3 --conf 0.4 --plot --quiet --no-masks
+
+python camera/segmentation_realsense.py --model yolo8 --variant taco-finetune-augment --rosbag rosbags/20261016_231841_clutter_med.db3 --conf 0.7 --quiet --plot --no-masks
+python camera/segmentation_realsense.py --model yolo8 --variant taco-finetune-augment --rosbag rosbags/20261016_232523_clutter_high2.db3 --conf 0.7 --quiet --plot --no-masks
+python camera/segmentation_realsense.py --model yolo8 --variant taco-finetune-augment --rosbag rosbags/20261016_233733_stacked.db3 --conf 0.7 --quiet --plot --no-masks
+
+python camera/segmentation_realsense.py --model yolo26 --variant original-finetune-augment --rosbag rosbags/20261016_231841_clutter_med.db3 --conf 0.55 --quiet --no-masks --plot
+python camera/segmentation_realsense.py --model yolo26 --variant original-finetune-augment --rosbag rosbags/20261016_232523_clutter_high2.db3 --conf 0.55 --quiet --no-masks --plot
+python camera/segmentation_realsense.py --model yolo26 --variant original-finetune-augment --rosbag rosbags/20261016_233733_stacked.db3 --conf 0.55 --quiet --no-masks --plot
+
+python camera/segmentation_realsense.py --model yolo26 --variant taco-finetune-augment --rosbag rosbags/20261016_231841_clutter_med.db3 --conf 0.55 --quiet --no-masks --plot
+python camera/segmentation_realsense.py --model yolo26 --variant taco-finetune-augment --rosbag rosbags/20261016_232523_clutter_high2.db3 --conf 0.55 --quiet --no-masks --plot
+python camera/segmentation_realsense.py --model yolo26 --variant taco-finetune-augment --rosbag rosbags/20261016_233733_stacked.db3 --conf 0.55 --quiet --no-masks --plot
+
+python camera/segmentation_realsense.py --model maskrcnn --variant finetune-augment --rosbag rosbags/20261016_231841_clutter_med.db3 --conf 0.95 --quiet --no-masks --plot
+python camera/segmentation_realsense.py --model maskrcnn --variant finetune-augment --rosbag rosbags/20261016_232523_clutter_high2.db3 --conf 0.95 --quiet --no-masks --plot
+python camera/segmentation_realsense.py --model maskrcnn --variant finetune-augment --rosbag rosbags/20261016_233733_stacked.db3 --conf 0.95 --quiet --no-masks --plot
+
+python camera/segmentation_realsense.py --model maskrcnn --variant taco-finetune-augment --rosbag rosbags/20261016_231841_clutter_med.db3 --conf 0.95 --quiet --no-masks --plot
+python camera/segmentation_realsense.py --model maskrcnn --variant taco-finetune-augment --rosbag rosbags/20261016_232523_clutter_high2.db3 --conf 0.95 --quiet --no-masks --plot
+python camera/segmentation_realsense.py --model maskrcnn --variant taco-finetune-augment --rosbag rosbags/20261016_233733_stacked.db3 --conf 0.95 --quiet --no-masks --plot
+
+python camera/segmentation_realsense.py --model rfdetr --variant finetune-augment --rosbag rosbags/20261016_231841_clutter_med.db3 --conf 0.5 --quiet --no-masks --plot
+python camera/segmentation_realsense.py --model rfdetr --variant finetune-augment --rosbag rosbags/20261016_232523_clutter_high2.db3 --conf 0.5 --quiet --no-masks --plot
+python camera/segmentation_realsense.py --model rfdetr --variant finetune-augment --rosbag rosbags/20261016_233733_stacked.db3 --conf 0.5 --quiet --no-masks --plot
+
+python camera/segmentation_realsense.py --model rfdetr --variant taco-finetune-augment --rosbag rosbags/20261016_231841_clutter_med.db3 --conf 0.6 --quiet --no-masks --plot
+python camera/segmentation_realsense.py --model rfdetr --variant taco-finetune-augment --rosbag rosbags/20261016_232523_clutter_high2.db3 --conf 0.6 --quiet --no-masks --plot
+python camera/segmentation_realsense.py --model rfdetr --variant taco-finetune-augment --rosbag rosbags/20261016_233733_stacked.db3 --conf 0.6 --quiet --no-masks --plot

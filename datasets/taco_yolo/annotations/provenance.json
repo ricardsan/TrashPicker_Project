@@ -1,0 +1,183 @@
+{
+ "what_this_is": "provenance for the COCO files in datasets/taco_yolo/annotations",
+ "script": "other_models/prepare_data.py",
+ "created": "2026-10-16T15:10:25.079274+00:00",
+ "source": {
+  "path": "datasets/TACO/data/annotations.json",
+  "sha256": "ac1ec605c9e1fcda767970de3457c69b4a43b62c02aca8c4c80f51d1b5ae8449",
+  "categories": 60,
+  "images": 1500,
+  "annotations": 4784
+ },
+ "mapping": {
+  "path": "datasets/taco_class_mapping_taco_yolo_reduced.json",
+  "sha256": "eec9b24597c9c298b24d6cb64254f717ca6c9ae80f0e7919b72401c9e02e5551",
+  "kept_categories": 35,
+  "dropped_categories": 25
+ },
+ "note": "built from the REDUCED mapping, not annotations-richard.json: the categories below are not written at all. The mapping file's own annotation_totals_per_target field is stale and is not used.",
+ "coordinate_frame": "EXIF-upright pixels, which is what OpenCV returns and what TACO's recorded sizes already use; no rotation was applied",
+ "images_disagreeing_with_recorded_size": [],
+ "annotations_dropped_by_mapping": 2799,
+ "images_left_empty_by_mapping": 0,
+ "images_not_on_disk": [],
+ "dropped_category_table": [
+  {
+   "id": 0,
+   "name": "Aluminium foil",
+   "n_annotations": 62
+  },
+  {
+   "id": 1,
+   "name": "Battery",
+   "n_annotations": 2
+  },
+  {
+   "id": 2,
+   "name": "Aluminium blister pack",
+   "n_annotations": 6
+  },
+  {
+   "id": 3,
+   "name": "Carded blister pack",
+   "n_annotations": 1
+  },
+  {
+   "id": 7,
+   "name": "Plastic bottle cap",
+   "n_annotations": 209
+  },
+  {
+   "id": 8,
+   "name": "Metal bottle cap",
+   "n_annotations": 80
+  },
+  {
+   "id": 9,
+   "name": "Broken glass",
+   "n_annotations": 138
+  },
+  {
+   "id": 25,
+   "name": "Food waste",
+   "n_annotations": 8
+  },
+  {
+   "id": 27,
+   "name": "Plastic lid",
+   "n_annotations": 77
+  },
+  {
+   "id": 28,
+   "name": "Metal lid",
+   "n_annotations": 10
+  },
+  {
+   "id": 35,
+   "name": "Plastified paper bag",
+   "n_annotations": 0
+  },
+  {
+   "id": 36,
+   "name": "Plastic film",
+   "n_annotations": 451
+  },
+  {
+   "id": 37,
+   "name": "Six pack rings",
+   "n_annotations": 5
+  },
+  {
+   "id": 38,
+   "name": "Garbage bag",
+   "n_annotations": 31
+  },
+  {
+   "id": 39,
+   "name": "Other plastic wrapper",
+   "n_annotations": 260
+  },
+  {
+   "id": 40,
+   "name": "Single-use carrier bag",
+   "n_annotations": 61
+  },
+  {
+   "id": 41,
+   "name": "Polypropylene bag",
+   "n_annotations": 3
+  },
+  {
+   "id": 42,
+   "name": "Crisp packet",
+   "n_annotations": 39
+  },
+  {
+   "id": 48,
+   "name": "Plastic glooves",
+   "n_annotations": 4
+  },
+  {
+   "id": 51,
+   "name": "Rope & strings",
+   "n_annotations": 29
+  },
+  {
+   "id": 52,
+   "name": "Scrap metal",
+   "n_annotations": 20
+  },
+  {
+   "id": 53,
+   "name": "Shoe",
+   "n_annotations": 7
+  },
+  {
+   "id": 57,
+   "name": "Styrofoam piece",
+   "n_annotations": 112
+  },
+  {
+   "id": 58,
+   "name": "Unlabeled litter",
+   "n_annotations": 517
+  },
+  {
+   "id": 59,
+   "name": "Cigarette",
+   "n_annotations": 667
+  }
+ ],
+ "splits": {
+  "train": {
+   "images": 706,
+   "annotations": 1383,
+   "per_class": {
+    "glass": 78,
+    "metal": 258,
+    "paper": 319,
+    "plastic": 728
+   }
+  },
+  "val": {
+   "images": 208,
+   "annotations": 413,
+   "per_class": {
+    "glass": 31,
+    "metal": 80,
+    "paper": 117,
+    "plastic": 185
+   }
+  },
+  "test": {
+   "images": 100,
+   "annotations": 189,
+   "per_class": {
+    "glass": 7,
+    "metal": 34,
+    "paper": 61,
+    "plastic": 87
+   }
+  }
+ }
+}

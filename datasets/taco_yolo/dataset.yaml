@@ -1,0 +1,10 @@
+train: images/train
+val: images/val
+test: images/test
+# converted from TACO/data/annotations-richard.json | task=segment classes=all seed=0
+nc: 4
+names:
+  0: "glass"
+  1: "metal"
+  2: "paper"
+  3: "plastic"

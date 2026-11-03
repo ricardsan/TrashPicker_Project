@@ -1,0 +1,8 @@
+T_base_cam is the calibration itself:
+[[-0.0166 -0.9399  0.3412  -0.1627]
+ [-0.9995  0.0252  0.0208   0.3009]
+ [-0.0281 -0.3407 -0.9398   1.3917]
+ [ 0       0       0        1     ]]
+In robot base coordinates, that means:
+Camera position: X = −163 mm, Y = 301 mm, Z = 1392 mm. The camera is about 1.4 m above the robot base, slightly behind it and off to the side.
+Camera orientation: it looks mostly downward, tilted about 20° from vertical, toward +X. This matches a camera mounted high and angled at the work area.

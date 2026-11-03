@@ -1,0 +1,21 @@
+SYNTHETIC. NOT A CALIBRATION. NEVER USE THIS ON THE REAL ROBOT.
+
+Written by robot/align_to_recording.py. To change it, change that and run it again.
+This file exists only so that a clip can show a whole pick in RobotStudio. The client refuses
+it for any host other than this machine.
+
+Measured from 20261016_231841_clutter_med, 20261016_232523_clutter_high2, 20261016_233733_stacked:
+  the camera is 789.4 mm above the sheet, tilted 13.47 degrees from
+  straight down. calibration.txt is turned by 6.50 degrees, and placed in height, so
+  that the sheet comes out level at z = 70 mm.
+Not measured, because no clip holds anything that ties it to the robot:
+  the heading is calibration.txt's, and x and y are chosen so that the optical axis meets the
+  sheet at x = 450 mm, y = 100 mm.
+So heights above the sheet and distances between objects are real. Where they are in the room
+is not.
+
+T_base_cam:
+[[-0.019698 -0.972509  0.232032  0.261648]
+ [-0.999463  0.025233  0.020910  0.083026]
+ [-0.026190 -0.231496 -0.972483  0.859411]
+ [ 0 0 0 1]]

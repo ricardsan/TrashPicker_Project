@@ -1,0 +1,52 @@
+# Third-party dependencies for the YOLO detection / RealSense / ABB robot project.
+# Everything else imported by the code (os, sys, json, math, time, random,
+# shutil, socket, argparse, pathlib, collections) is part of the standard library.
+
+# --- Core deep learning / detection ---
+ultralytics>=8.3.0        # YOLO training + inference (live.py, live_stable.py, robot/, camera/);
+                          # other_models/ also reuses its metrics + plotting so the Mask R-CNN and
+                          # RF-DETR figures are produced by the same code as the YOLO ones
+                          # (see other_models/README.md)
+torch>=2.0                # pulled in by ultralytics; used directly for CUDA check in live_stable.py
+torchvision>=0.15         # Mask R-CNN and the other detection models in other_models/models.py
+
+# RF-DETR, the transformer entry in other_models/models.py. Deliberately the BASE package
+# and not rfdetr[train]: other_models/engine.py runs the training loop itself (so that the
+# recipe is ultralytics', not Roboflow's), and all we take from rfdetr is the nn.Module,
+# the SetCriterion and the COCO-pretrained weights. The [train] extra would additionally
+# pull pytorch-lightning, torchmetrics, pycocotools, roboflow and ~8 more, none of which is
+# used. `import rfdetr` is lazy about lightning, so the base install reaches everything we
+# need. Brings transformers (the DINOv2 backbone), supervision, pydantic and tokenizers.
+#
+# Pinned to the 1.11 minor on purpose. rfdetr_adapter.py depends on structural and
+# semi-private API -- LWDETR._get_backbone_encoder_layers(), the net.backbone[0].encoder
+# layout, the encoder.embeddings.* parameter names, PostProcess(num_select=,
+# upsample_masks_to_image_size=) and build_criterion_from_config's signature -- so an open
+# upper bound invites either a loud RuntimeError or, worse, a silently unfrozen backbone
+# while args.yaml still claims one trainable block.
+rfdetr>=1.11.2,<1.12
+
+# --- Computer vision ---
+# aruco/charuco (cv2.aruco.CharucoDetector) lives in the main opencv package
+# since 4.7 — do not install opencv-python and opencv-contrib-python together.
+opencv-python>=4.7.0
+numpy>=1.24,<2.0          # ultralytics/opencv are safest on the 1.x ABI
+Pillow>=10.0              # convert_to_jpg.py
+
+# --- Intel RealSense depth camera ---
+# >=2.56 for camera/rosbag_frames.py: the .db3 bags in rosbags/ are librealsense's own ROS 2 bag
+# format, which earlier builds cannot open with enable_device_from_file. Replaying one needs no
+# ROS 2 installation of any kind. Developed against 2.58.4.
+pyrealsense2>=2.56.0      # camera/*, live*.py, robot/yolo_robot*.py
+
+# --- Data / config ---
+pandas>=2.0               # collect_results.py
+PyYAML>=6.0               # create_5fold_dataset.py
+
+# --- Visualisation ---
+matplotlib>=3.7           # datasets/visualise_taco_yolo.py, other_models/visualise_masks.py,
+                          # camera/benchmark.py (the run-speed figure)
+scipy>=1.10               # ultralytics' plotting imports scipy.ndimage on some versions
+
+# --- Tests ---
+pytest>=7.0               # other_models/tests/, camera/tests/

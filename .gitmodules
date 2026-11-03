@@ -1,0 +1,3 @@
+[submodule "datasets/TACO"]
+	path = datasets/TACO
+	url = https://github.com/pedropro/TACO

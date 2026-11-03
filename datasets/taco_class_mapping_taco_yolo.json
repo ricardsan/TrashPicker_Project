@@ -1,0 +1,527 @@
+{
+  "source": "datasets/TACO/data/annotations.json",
+  "source_format": "COCO (bbox = [x, y, w, h] absolute pixels; segmentation polygons present)",
+  "n_source_categories": 60,
+  "n_source_annotations": 4784,
+  "n_source_images": 1500,
+  "target_classes": {
+    "glass": 0,
+    "metal": 1,
+    "paper": 2,
+    "plastic": 3,
+    "skip": 4
+  },
+  "skip_class": {
+    "id": 4,
+    "meaning": "not a material stream / composite / unknown: drop the annotation instead of writing a YOLO line"
+  },
+  "yolo_class_ids_match": "data_v2.yaml (glass=0, metal=1, paper=2, plastic=3)",
+  "notes": {
+    "1": "Hazardous waste, own disposal stream -> skip.",
+    "2": "Aluminium foil + plastic laminate; aluminium-dominant and named as such -> metal.",
+    "3": "Card backing + plastic bubble, no dominant material, 1 instance -> skip.",
+    "16": "Tetra Pak style composite (paper/PE/Al) but paperboard-dominant and collected with cartons -> paper.",
+    "20": "PE-lined but paper-dominant -> paper.",
+    "22": "Expanded polystyrene foam -> plastic.",
+    "25": "Organic waste, none of the four material streams -> skip.",
+    "35": "Plastic-coated paper bag, composite; 0 instances in this file anyway -> skip.",
+    "42": "Metallised plastic film, not recyclable metal -> plastic.",
+    "46": "Expanded polystyrene foam -> plastic.",
+    "51": "Mixed fibre/synthetic cordage, material not determinable from the label -> skip.",
+    "53": "Composite (leather/textile/rubber/plastic) -> skip.",
+    "54": "Toothpaste-style tube; predominantly plastic/laminate today -> plastic (7 instances, low impact).",
+    "57": "Expanded polystyrene foam -> plastic.",
+    "58": "Material unknown by definition; keeping it would inject label noise -> skip.",
+    "59": "Cellulose acetate filter + paper + tobacco; not a recyclable stream here -> skip."
+  },
+  "mapping": {
+    "0": {
+      "taco_name": "Aluminium foil",
+      "taco_supercategory": "Aluminium foil",
+      "target": "metal",
+      "target_id": 1,
+      "drop": false,
+      "n_annotations": 62
+    },
+    "1": {
+      "taco_name": "Battery",
+      "taco_supercategory": "Battery",
+      "target": "skip",
+      "target_id": 4,
+      "drop": true,
+      "n_annotations": 2
+    },
+    "2": {
+      "taco_name": "Aluminium blister pack",
+      "taco_supercategory": "Blister pack",
+      "target": "metal",
+      "target_id": 1,
+      "drop": false,
+      "n_annotations": 6
+    },
+    "3": {
+      "taco_name": "Carded blister pack",
+      "taco_supercategory": "Blister pack",
+      "target": "skip",
+      "target_id": 4,
+      "drop": true,
+      "n_annotations": 1
+    },
+    "4": {
+      "taco_name": "Other plastic bottle",
+      "taco_supercategory": "Bottle",
+      "target": "plastic",
+      "target_id": 3,
+      "drop": false,
+      "n_annotations": 50
+    },
+    "5": {
+      "taco_name": "Clear plastic bottle",
+      "taco_supercategory": "Bottle",
+      "target": "plastic",
+      "target_id": 3,
+      "drop": false,
+      "n_annotations": 285
+    },
+    "6": {
+      "taco_name": "Glass bottle",
+      "taco_supercategory": "Bottle",
+      "target": "glass",
+      "target_id": 0,
+      "drop": false,
+      "n_annotations": 104
+    },
+    "7": {
+      "taco_name": "Plastic bottle cap",
+      "taco_supercategory": "Bottle cap",
+      "target": "plastic",
+      "target_id": 3,
+      "drop": false,
+      "n_annotations": 209
+    },
+    "8": {
+      "taco_name": "Metal bottle cap",
+      "taco_supercategory": "Bottle cap",
+      "target": "metal",
+      "target_id": 1,
+      "drop": false,
+      "n_annotations": 80
+    },
+    "9": {
+      "taco_name": "Broken glass",
+      "taco_supercategory": "Broken glass",
+      "target": "glass",
+      "target_id": 0,
+      "drop": false,
+      "n_annotations": 138
+    },
+    "10": {
+      "taco_name": "Food Can",
+      "taco_supercategory": "Can",
+      "target": "metal",
+      "target_id": 1,
+      "drop": false,
+      "n_annotations": 34
+    },
+    "11": {
+      "taco_name": "Aerosol",
+      "taco_supercategory": "Can",
+      "target": "metal",
+      "target_id": 1,
+      "drop": false,
+      "n_annotations": 10
+    },
+    "12": {
+      "taco_name": "Drink can",
+      "taco_supercategory": "Can",
+      "target": "metal",
+      "target_id": 1,
+      "drop": false,
+      "n_annotations": 229
+    },
+    "13": {
+      "taco_name": "Toilet tube",
+      "taco_supercategory": "Carton",
+      "target": "paper",
+      "target_id": 2,
+      "drop": false,
+      "n_annotations": 5
+    },
+    "14": {
+      "taco_name": "Other carton",
+      "taco_supercategory": "Carton",
+      "target": "paper",
+      "target_id": 2,
+      "drop": false,
+      "n_annotations": 93
+    },
+    "15": {
+      "taco_name": "Egg carton",
+      "taco_supercategory": "Carton",
+      "target": "paper",
+      "target_id": 2,
+      "drop": false,
+      "n_annotations": 11
+    },
+    "16": {
+      "taco_name": "Drink carton",
+      "taco_supercategory": "Carton",
+      "target": "paper",
+      "target_id": 2,
+      "drop": false,
+      "n_annotations": 45
+    },
+    "17": {
+      "taco_name": "Corrugated carton",
+      "taco_supercategory": "Carton",
+      "target": "paper",
+      "target_id": 2,
+      "drop": false,
+      "n_annotations": 64
+    },
+    "18": {
+      "taco_name": "Meal carton",
+      "taco_supercategory": "Carton",
+      "target": "paper",
+      "target_id": 2,
+      "drop": false,
+      "n_annotations": 30
+    },
+    "19": {
+      "taco_name": "Pizza box",
+      "taco_supercategory": "Carton",
+      "target": "paper",
+      "target_id": 2,
+      "drop": false,
+      "n_annotations": 3
+    },
+    "20": {
+      "taco_name": "Paper cup",
+      "taco_supercategory": "Cup",
+      "target": "paper",
+      "target_id": 2,
+      "drop": false,
+      "n_annotations": 67
+    },
+    "21": {
+      "taco_name": "Disposable plastic cup",
+      "taco_supercategory": "Cup",
+      "target": "plastic",
+      "target_id": 3,
+      "drop": false,
+      "n_annotations": 104
+    },
+    "22": {
+      "taco_name": "Foam cup",
+      "taco_supercategory": "Cup",
+      "target": "plastic",
+      "target_id": 3,
+      "drop": false,
+      "n_annotations": 13
+    },
+    "23": {
+      "taco_name": "Glass cup",
+      "taco_supercategory": "Cup",
+      "target": "glass",
+      "target_id": 0,
+      "drop": false,
+      "n_annotations": 6
+    },
+    "24": {
+      "taco_name": "Other plastic cup",
+      "taco_supercategory": "Cup",
+      "target": "plastic",
+      "target_id": 3,
+      "drop": false,
+      "n_annotations": 2
+    },
+    "25": {
+      "taco_name": "Food waste",
+      "taco_supercategory": "Food waste",
+      "target": "skip",
+      "target_id": 4,
+      "drop": true,
+      "n_annotations": 8
+    },
+    "26": {
+      "taco_name": "Glass jar",
+      "taco_supercategory": "Glass jar",
+      "target": "glass",
+      "target_id": 0,
+      "drop": false,
+      "n_annotations": 6
+    },
+    "27": {
+      "taco_name": "Plastic lid",
+      "taco_supercategory": "Lid",
+      "target": "plastic",
+      "target_id": 3,
+      "drop": false,
+      "n_annotations": 77
+    },
+    "28": {
+      "taco_name": "Metal lid",
+      "taco_supercategory": "Lid",
+      "target": "metal",
+      "target_id": 1,
+      "drop": false,
+      "n_annotations": 10
+    },
+    "29": {
+      "taco_name": "Other plastic",
+      "taco_supercategory": "Other plastic",
+      "target": "plastic",
+      "target_id": 3,
+      "drop": false,
+      "n_annotations": 273
+    },
+    "30": {
+      "taco_name": "Magazine paper",
+      "taco_supercategory": "Paper",
+      "target": "paper",
+      "target_id": 2,
+      "drop": false,
+      "n_annotations": 12
+    },
+    "31": {
+      "taco_name": "Tissues",
+      "taco_supercategory": "Paper",
+      "target": "paper",
+      "target_id": 2,
+      "drop": false,
+      "n_annotations": 42
+    },
+    "32": {
+      "taco_name": "Wrapping paper",
+      "taco_supercategory": "Paper",
+      "target": "paper",
+      "target_id": 2,
+      "drop": false,
+      "n_annotations": 12
+    },
+    "33": {
+      "taco_name": "Normal paper",
+      "taco_supercategory": "Paper",
+      "target": "paper",
+      "target_id": 2,
+      "drop": false,
+      "n_annotations": 82
+    },
+    "34": {
+      "taco_name": "Paper bag",
+      "taco_supercategory": "Paper bag",
+      "target": "paper",
+      "target_id": 2,
+      "drop": false,
+      "n_annotations": 27
+    },
+    "35": {
+      "taco_name": "Plastified paper bag",
+      "taco_supercategory": "Paper bag",
+      "target": "skip",
+      "target_id": 4,
+      "drop": true,
+      "n_annotations": 0
+    },
+    "36": {
+      "taco_name": "Plastic film",
+      "taco_supercategory": "Plastic bag & wrapper",
+      "target": "plastic",
+      "target_id": 3,
+      "drop": false,
+      "n_annotations": 451
+    },
+    "37": {
+      "taco_name": "Six pack rings",
+      "taco_supercategory": "Plastic bag & wrapper",
+      "target": "plastic",
+      "target_id": 3,
+      "drop": false,
+      "n_annotations": 5
+    },
+    "38": {
+      "taco_name": "Garbage bag",
+      "taco_supercategory": "Plastic bag & wrapper",
+      "target": "plastic",
+      "target_id": 3,
+      "drop": false,
+      "n_annotations": 31
+    },
+    "39": {
+      "taco_name": "Other plastic wrapper",
+      "taco_supercategory": "Plastic bag & wrapper",
+      "target": "plastic",
+      "target_id": 3,
+      "drop": false,
+      "n_annotations": 260
+    },
+    "40": {
+      "taco_name": "Single-use carrier bag",
+      "taco_supercategory": "Plastic bag & wrapper",
+      "target": "plastic",
+      "target_id": 3,
+      "drop": false,
+      "n_annotations": 61
+    },
+    "41": {
+      "taco_name": "Polypropylene bag",
+      "taco_supercategory": "Plastic bag & wrapper",
+      "target": "plastic",
+      "target_id": 3,
+      "drop": false,
+      "n_annotations": 3
+    },
+    "42": {
+      "taco_name": "Crisp packet",
+      "taco_supercategory": "Plastic bag & wrapper",
+      "target": "plastic",
+      "target_id": 3,
+      "drop": false,
+      "n_annotations": 39
+    },
+    "43": {
+      "taco_name": "Spread tub",
+      "taco_supercategory": "Plastic container",
+      "target": "plastic",
+      "target_id": 3,
+      "drop": false,
+      "n_annotations": 9
+    },
+    "44": {
+      "taco_name": "Tupperware",
+      "taco_supercategory": "Plastic container",
+      "target": "plastic",
+      "target_id": 3,
+      "drop": false,
+      "n_annotations": 4
+    },
+    "45": {
+      "taco_name": "Disposable food container",
+      "taco_supercategory": "Plastic container",
+      "target": "plastic",
+      "target_id": 3,
+      "drop": false,
+      "n_annotations": 38
+    },
+    "46": {
+      "taco_name": "Foam food container",
+      "taco_supercategory": "Plastic container",
+      "target": "plastic",
+      "target_id": 3,
+      "drop": false,
+      "n_annotations": 15
+    },
+    "47": {
+      "taco_name": "Other plastic container",
+      "taco_supercategory": "Plastic container",
+      "target": "plastic",
+      "target_id": 3,
+      "drop": false,
+      "n_annotations": 6
+    },
+    "48": {
+      "taco_name": "Plastic glooves",
+      "taco_supercategory": "Plastic glooves",
+      "target": "plastic",
+      "target_id": 3,
+      "drop": false,
+      "n_annotations": 4
+    },
+    "49": {
+      "taco_name": "Plastic utensils",
+      "taco_supercategory": "Plastic utensils",
+      "target": "plastic",
+      "target_id": 3,
+      "drop": false,
+      "n_annotations": 37
+    },
+    "50": {
+      "taco_name": "Pop tab",
+      "taco_supercategory": "Pop tab",
+      "target": "metal",
+      "target_id": 1,
+      "drop": false,
+      "n_annotations": 99
+    },
+    "51": {
+      "taco_name": "Rope & strings",
+      "taco_supercategory": "Rope & strings",
+      "target": "skip",
+      "target_id": 4,
+      "drop": true,
+      "n_annotations": 29
+    },
+    "52": {
+      "taco_name": "Scrap metal",
+      "taco_supercategory": "Scrap metal",
+      "target": "metal",
+      "target_id": 1,
+      "drop": false,
+      "n_annotations": 20
+    },
+    "53": {
+      "taco_name": "Shoe",
+      "taco_supercategory": "Shoe",
+      "target": "skip",
+      "target_id": 4,
+      "drop": true,
+      "n_annotations": 7
+    },
+    "54": {
+      "taco_name": "Squeezable tube",
+      "taco_supercategory": "Squeezable tube",
+      "target": "plastic",
+      "target_id": 3,
+      "drop": false,
+      "n_annotations": 7
+    },
+    "55": {
+      "taco_name": "Plastic straw",
+      "taco_supercategory": "Straw",
+      "target": "plastic",
+      "target_id": 3,
+      "drop": false,
+      "n_annotations": 157
+    },
+    "56": {
+      "taco_name": "Paper straw",
+      "taco_supercategory": "Straw",
+      "target": "paper",
+      "target_id": 2,
+      "drop": false,
+      "n_annotations": 4
+    },
+    "57": {
+      "taco_name": "Styrofoam piece",
+      "taco_supercategory": "Styrofoam piece",
+      "target": "plastic",
+      "target_id": 3,
+      "drop": false,
+      "n_annotations": 112
+    },
+    "58": {
+      "taco_name": "Unlabeled litter",
+      "taco_supercategory": "Unlabeled litter",
+      "target": "skip",
+      "target_id": 4,
+      "drop": true,
+      "n_annotations": 517
+    },
+    "59": {
+      "taco_name": "Cigarette",
+      "taco_supercategory": "Cigarette",
+      "target": "skip",
+      "target_id": 4,
+      "drop": true,
+      "n_annotations": 667
+    }
+  },
+  "annotation_totals_per_target": {
+    "glass": 254,
+    "metal": 550,
+    "paper": 497,
+    "plastic": 2252,
+    "skip": 1231
+  },
+  "exported_annotations": 3553
+}

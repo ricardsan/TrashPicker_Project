@@ -1,0 +1,557 @@
+================================================================================
+WHAT IS IN A CAMERA RUN'S CSV FILES
+================================================================================
+
+A run of camera/segmentation_realsense.py writes its files into a folder of its
+own, named after the run:
+
+    <some parent>/2026-10-27-210952-yolov8-custom/
+        2026-10-27-210952-yolov8-custom.csv            one row per FRAME
+        2026-10-27-210952-yolov8-custom-objects.csv    one row per OBJECT
+        2026-10-27-210952-yolov8-custom.png            the speed figure
+        2026-10-27-210952-yolov8-custom.mp4            the annotated video
+
+The folder name -- the "stem" referred to below -- is
+<date>-<time>-<model>-<dataset>, with seconds included so two runs a minute apart
+cannot collide.
+
+The two CSVs answer different questions:
+
+    <stem>.csv            how fast was the model, and how much did it see
+    <stem>-objects.csv    what were the individual objects, and where were they
+
+The second one is the new file, and most of this document is about it. It only
+exists if the run was given --objects; the first is always written unless the run
+was given --no-log.
+
+Both are plain comma-separated text with the column names on the first line, so
+they open directly in Excel, LibreOffice, pandas or anything else.
+
+NOTE ON WHAT IS CURRENTLY IN THIS FOLDER
+    At the time of writing, every run stored under runs/camera/ was made before
+    these columns existed, and is laid out by hand as
+    <model>/<dataset>/<bag>/<stem>.csv rather than one-folder-per-run. So:
+
+      - there is no -objects.csv here yet to look at; Part 4 shows how to make
+        one;
+      - the existing per-frame CSVs stop at the stream_fps column and have no
+        `extras` and no n_<class> columns. That is expected and they still read
+        and plot correctly -- the columns are append-only, and anything that
+        reads them does so by name.
+
+
+================================================================================
+PART 1 -- THE PER-OBJECT FILE, <stem>-objects.csv
+================================================================================
+
+One row per detected object per frame. A run of 143 frames that saw 3 objects in
+most frames produces about 700 rows, not 143. If you want one row per frame, you
+want the other file.
+
+The 22 columns, in the order they appear:
+
+    frame, timestamp, elapsed_s, object_id, cls, class_name, conf,
+    cx, cy, cx_box, cy_box, x1, y1, x2, y2,
+    X_m, Y_m, Z_m, depth_source, mask_px, depth_px, orientation_deg
+
+
+--------------------------------------------------------------------------------
+WHEN -- frame, timestamp, elapsed_s
+--------------------------------------------------------------------------------
+
+frame
+    Which frame this object was seen on. Counts from 0 and goes up by one per
+    frame the model was actually shown. Frames the camera dropped, or that a
+    replay skipped because the model could not keep up, get no row in either
+    file -- so `frame` is a count of frames processed, not of frames that existed
+    in front of the camera.
+
+    This is the column that joins the two CSVs. Every row here shares its frame
+    number with exactly one row in the per-frame file.
+
+    Frame 0 is the warm-up frame. The first model call also pays for the CUDA
+    context and cuDNN's autotuning, so it is routinely 10-20x slower than the
+    rest; it is present in both CSVs but excluded from the summary statistics and
+    from the figure. Its detections are perfectly good -- only its timing is odd.
+
+timestamp
+    Wall-clock time, ISO 8601, to the millisecond: 2026-10-27T21:09:56.661.
+    Identical for every object on the same frame, because it is the frame's
+    timestamp, not the object's. Use it to line a run up against something
+    outside the run (a logbook, a robot trace). For anything internal, prefer
+    elapsed_s.
+
+elapsed_s
+    Seconds since the run started logging. Monotonic, and measured with a
+    performance counter rather than the wall clock, so it does not jump if the
+    system clock is adjusted mid-run.
+
+    The two CSVs share the same zero, so a given frame has (almost exactly) the
+    same elapsed_s in both -- they differ by well under a millisecond, which is
+    just the time taken to write one row.
+
+    It does not start at 0.000: the first row carries however long the warm-up
+    frame took. 3.3055 in the clutter_med run.
+
+
+--------------------------------------------------------------------------------
+WHAT -- object_id, cls, class_name, conf
+--------------------------------------------------------------------------------
+
+object_id
+    Which physical object this is. The same bottle keeps the same id for as long
+    as it is tracked, so you can follow one object through the clip, count how
+    many distinct objects a run saw, or measure how long each was visible.
+
+    Counts from 0 per run. Unique within a frame (two rows of the same frame
+    never share an id). Ids are assigned in the order objects are first seen, and
+    the same recording replayed twice gives the same ids.
+
+    An id is retired after the object has been missing for 5 consecutive frames,
+    and a new id is issued if it comes back after that. A brief occlusion -- an
+    object passing behind another -- therefore keeps its id; an object that
+    leaves and returns later does not.
+
+    IMPORTANT: matching deliberately ignores the predicted class. See the note on
+    `cls` below.
+
+    If the run was given --no-track, object_id is instead just the object's
+    position within its own frame (0, 1, 2 ...) and means nothing across frames.
+    This is not recorded in the file; the giveaway is that the ids are then always
+    0..n-1 with no gaps on every single frame.
+
+cls
+    The class index the model predicted, as an integer. For this project's
+    four-class dataset:
+
+        0 = glass    1 = metal    2 = paper    3 = plastic
+
+class_name
+    The same thing spelled out, read from the checkpoint's own class list. Use
+    this one; `cls` is kept because it is what the model actually emits and what
+    the training code uses. If a checkpoint has a class with no name, this falls
+    back to the index as text.
+
+    NOTE -- the class belongs to the ROW, not to the object. The models flip
+    between visually similar classes from frame to frame, and the tracker
+    deliberately does not require the class to agree before matching: if it did,
+    every flicker would mint a new id, and the distinct-object count would be
+    nonsense exactly where the model is least certain. So the id is stable and the
+    class is per-frame, which means a flicker is visible in the data rather than
+    hidden by it.
+
+    A real example, object_id=0 of the clutter_med run: 142 consecutive frames,
+    logged as "glass" for the first 10 and "plastic" for the remaining 132. One
+    object, one id, two class labels. object_id=1 of the same run went
+    paper, paper, glass, glass, paper over five frames.
+
+    Consequence worth knowing: if you want "how many plastic objects were there",
+    counting distinct object_ids whose class_name is "plastic" will over-count,
+    because a flickering object is counted under both labels. Decide a single
+    class per object first -- the most frequent label over its rows is a
+    reasonable rule -- then count.
+
+conf
+    How confident the model was, from 0 to 1, rounded to 4 decimals. Always at or
+    above the run's --conf threshold, because anything below it was discarded
+    before this file was written. The threshold differs per model (see
+    full_evaluation.txt in this folder for the ones used), so conf values are not
+    comparable across models without care.
+
+
+--------------------------------------------------------------------------------
+WHERE ON THE IMAGE -- cx, cy, cx_box, cy_box, x1, y1, x2, y2
+--------------------------------------------------------------------------------
+
+All eight are pixel coordinates in the frame THE MODEL WAS SHOWN, with (0, 0) at
+the top-left and y increasing downward. That frame is not always the camera's
+native resolution:
+
+    live camera      640 x 480
+    rosbag replay    640 x 360   (the 1280x720 recording, halved)
+
+Each run prints the size it used at startup ("input to the model: ..."). The
+figures below are from 640x360 replays.
+
+x1, y1, x2, y2
+    The bounding box: (x1, y1) top-left, (x2, y2) bottom-right. Clipped to the
+    frame, so they never point outside it. A box can be degenerate (x1 == x2) for
+    a detection right on the edge.
+
+cx_box, cy_box
+    The centre of that box -- ((x1+x2)/2, (y1+y2)/2), rounded down. This is where
+    every run before this file existed measured distance, and it is kept so old
+    and new runs can be compared on the same basis.
+
+cx, cy
+    The pixel the distance in X_m/Y_m/Z_m was actually measured at, and the point
+    drawn as a red dot in the video.
+
+    Under --objects this is the CENTROID OF THE OBJECT'S MASK, which is usually
+    not the centre of its box. The box around a bottle lying diagonally is mostly
+    floor, and its centre lands on the floor behind the bottle rather than on it;
+    the mask's centroid is on the object by construction. If the run used
+    --centre-depth, or a detection came back with no mask, cx/cy fall back to the
+    box centre and equal cx_box/cy_box.
+
+    So: cx/cy is where the measurement came from, cx_box/cy_box is where the box
+    says the middle is. Comparing the two tells you how far off-centre the object
+    sits inside its own box. In the clutter_med run, row 1 has cx,cy = (425, 59)
+    against cx_box,cy_box = (416, 57) -- 9 pixels apart.
+
+
+--------------------------------------------------------------------------------
+WHERE IN SPACE -- X_m, Y_m, Z_m
+--------------------------------------------------------------------------------
+
+The object's position in METRES, in the camera's own coordinate frame, obtained
+by projecting the pixel (cx, cy) out to the measured distance using the camera's
+calibrated intrinsics. The axes are the RealSense convention:
+
+    X_m    positive to the RIGHT of the image centre
+    Y_m    positive DOWNWARD from the image centre
+    Z_m    positive FORWARD, along the lens axis, away from the camera
+
+The origin is the camera's optical centre, so an object in the middle of the
+frame has X_m and Y_m near 0 whatever its distance.
+
+*** Z_m IS DISTANCE FROM THE CAMERA, NOT HEIGHT ABOVE THE TABLE. ***
+
+    This is the single most likely thing to be misread. Z_m grows as an object
+    moves AWAY from the lens. With the camera looking down at a bin, a taller
+    object has a SMALLER Z_m, because its top is closer to the camera. Z_m says
+    nothing by itself about how tall an object is.
+
+    Turning it into a height above the table needs the camera-to-table transform,
+    which is not applied here. That calibration lives in
+    camera/calibrate_T_base_cam.py. As a rough stand-in, (table Z) - (object Z)
+    is a height, if you know the table's own Z_m -- but it is only as good as the
+    assumption that the camera points straight down.
+
+    In the two reference runs described at the end of Part 3, Z_m sits between
+    0.67 and 0.84 m, which is the camera-to-contents distance of that setup, not
+    the size of anything in it.
+
+*** AN EMPTY X_m/Y_m/Z_m MEANS NO MEASUREMENT, WHICH IS NOT THE SAME AS ZERO. ***
+
+    These three fields are left BLANK when the depth camera returned nothing
+    usable for the object. They are never written as 0.
+
+    The depth stream reports 0 for a pixel it got no return from, and that is the
+    normal case for exactly the materials this project sorts: clear glass, clear
+    plastic film, anything wet or shiny, anything beyond the sensor's range or too
+    close to it. Writing 0.0 for those would put a confident wrong number -- an
+    object apparently 0 cm from the lens -- in among the real ones, where any
+    average or plot would silently absorb it.
+
+    So: filter blanks out before doing arithmetic. In pandas, read the file
+    normally and the column arrives as NaN, which .mean() and .plot() already
+    skip. In a spreadsheet, AVERAGE() ignores blanks but COUNT-style formulas may
+    not. The companion column depth_source says why a row is blank.
+
+    Neither reference run has a single blank row -- all 702 and all 1387
+    detections got a reading, because that scene is matt cardboard and metal at a
+    comfortable range. Do not assume that of every run: a bin of clear PET
+    bottles is the case this column exists for.
+
+
+--------------------------------------------------------------------------------
+HOW TRUSTWORTHY -- depth_source, mask_px, depth_px
+--------------------------------------------------------------------------------
+
+depth_source
+    Where the distance came from. Exactly one of three values:
+
+    mask-median     The median of every valid depth pixel inside the object's
+                    mask. The best of the three: it uses the whole object rather
+                    than one point, and the median shrugs off the speckle around
+                    a mask's edge. This is what --objects produces.
+
+    centre-pixel    A single depth pixel at (cx, cy). What every run before this
+                    used. Produced by --centre-depth, and also for any detection
+                    that has no mask (a detection-only checkpoint, or a frame the
+                    model returned no masks for). Noisier, and wrong outright if
+                    that one pixel happened to miss the object.
+
+    none            No usable depth at all. X_m, Y_m and Z_m are blank on this
+                    row. Not an error -- see the note above.
+
+mask_px
+    The area of the object's mask, in pixels of the model's frame. A size measure
+    in image terms, useful for sorting big objects from small ones or for spotting
+    a mask that has collapsed to almost nothing. It is 0 when there is no mask,
+    and also 0 for a run that used --centre-depth, which does not look at the mask
+    at all.
+
+    Note it is an AREA IN PIXELS, not an area in cm^2: the same object twice as
+    far away covers about a quarter as many pixels. Converting to real area needs
+    Z_m and the intrinsics.
+
+depth_px
+    How many of those mask_px pixels actually returned a depth reading -- i.e.
+    how much evidence the Z_m on this row rests on. Always <= mask_px.
+
+    This is the column that tells a solid measurement from a lucky one. A Z_m
+    taken from 5285 of 5955 mask pixels (row 1 of the clutter_med run, 89%) is
+    worth trusting; a Z_m taken from 3 pixels out of 4000 is one speckle of noise
+    wearing a median's clothing, and both look identical in the Z_m column alone.
+
+    A reasonable filter for analysis is depth_px / mask_px > 0.5, or an absolute
+    depth_px > 100. In the clutter_med reference run the median ratio is 99%, and
+    that filter keeps 698 of 702 rows -- on a well-lit matt scene it throws away
+    almost nothing, which is what you want from a safety net.
+
+
+--------------------------------------------------------------------------------
+WHICH WAY IT WAS LYING -- orientation_deg
+--------------------------------------------------------------------------------
+
+orientation_deg
+    The direction the object is lying in, in degrees. It is the orientation of the
+    FIRST PRINCIPAL COMPONENT of the object's mask: take every pixel of the mask
+    as a point, and this is the direction along which those points are most spread
+    out -- the long way down a bottle, the long way along a flattened box.
+
+    0 DEGREES IS PARALLEL TO THE BOTTOM EDGE OF THE FRAME, and the angle grows
+    ANTICLOCKWISE as you see it on screen:
+
+        lying across the frame   --      0.0
+        leaning up to the right  /      45.0
+        standing up the frame    |      90.0
+        leaning up to the left   \     135.0
+
+    The range is [0, 180) and never more. That is not a truncation: a principal
+    axis is a LINE, NOT AN ARROW. Nothing in a mask says which end of a bottle is
+    the neck, so "pointing 20 degrees" and "pointing 200 degrees" are the same
+    measurement and only one of them is reported. If you need to know which end is
+    which, this column cannot tell you and no amount of post-processing of it will.
+
+    CONSEQUENCE FOR AVERAGING, and it bites immediately: 179 is one degree away
+    from 0, not 179 degrees away. A plain mean of this column over the frames of
+    one object will be badly wrong for anything lying near horizontal -- rows of
+    179.4 and 0.6 average to 90, which is the one answer that is certainly false.
+    Average the doubled angle instead:
+
+        import numpy as np
+        th = np.radians(2 * np.asarray(angles, float))    # asarray: 2 * [list] CONCATENATES
+        mean_deg = (np.degrees(np.arctan2(np.sin(th).mean(),
+                                          np.cos(th).mean())) / 2) % 180
+        mean_deg = 0.0 if mean_deg >= 180 else mean_deg   # see below
+
+    Both of those last two lines earn their keep. `2 * angles` on a plain Python
+    list joins the list to itself instead of doubling the angles, and the recipe
+    then quietly returns the wrong answer rather than failing. And Python's float
+    modulo returns exactly 180.0 for a tiny negative input, so averaging 175 and 5
+    -- whose true mean is 0 -- lands on 180.0 without that clamp: outside the range
+    this very column promises, in precisely the wrap case the recipe exists for.
+
+    Same for a standard deviation: compute it on the doubled angle, or just look
+    at min and max after deciding which side of the wrap you are on.
+
+    It is measured in the same frame as cx/cy -- the frame the model was shown --
+    but unlike cx/cy it needs no rescaling to compare a 640x360 replay with a
+    640x480 live run, because halving a frame preserves aspect and therefore
+    preserves angles. A crop or a non-uniform resize would not.
+
+    BLANK WHEN THERE WAS NO MASK TO TAKE AN AXIS OVER -- which is when mask_px is
+    0 or 1, so that is the one rule to remember:
+
+        --centre-depth runs         never look at the masks at all
+        detection-only checkpoints  have no mask head to look at
+        a detection whose mask      thresholded away to nothing
+        a one-pixel mask            has no direction, not even a bad one -- this
+                                    is the case where mask_px is 1, not 0
+
+    The field is left EMPTY for all of those rather than written as 0.0, because
+    0.0 is a real value in this column: it means "lying horizontally". The same
+    reasoning as the blank Z_m above.
+
+    A ROUND OBJECT'S ANGLE IS ARITHMETIC ON NOTHING. A crushed can seen end-on, or
+    a jar lid, is as spread out one way as the other, so its principal axis is
+    whichever way the mask's edge noise happened to fall and it will jump between
+    frames. The number is still computed -- there is no "undefined" to write -- so
+    judge it yourself: a mask whose box is nearly square, or whose angle swings
+    tens of degrees from frame to frame while the object sits still, is telling you
+    the object has no orientation worth reading, not that it is spinning.
+
+    TO SEE IT RATHER THAN READ IT, add --show-axis to the run: it draws each
+    object's axis as a cyan line through its centroid, in the window and in the
+    --save-video MP4. That is also the honest way to check this column -- an angle
+    that is somehow mirrored is obvious on a picture and invisible in a CSV.
+    --show-axis implies --objects and cannot be combined with --centre-depth, which
+    would leave it nothing to draw.
+
+
+================================================================================
+PART 2 -- THE PER-FRAME FILE, <stem>.csv
+================================================================================
+
+One row per frame. Most of its columns pre-date the per-object file and are
+documented at the top of camera/benchmark.py; this is a quick reference, with the
+two genuinely new columns spelled out.
+
+    frame           same frame number as in the per-object file -- the join key
+    timestamp       wall clock, as above
+    elapsed_s       seconds since the run started, same zero as the other file
+    n_detections    how many objects were seen on this frame
+    inference_ms    how long the model call itself took
+    loop_ms         how long the whole loop iteration took, grab to display
+    fps             1000 / loop_ms -- the rate actually achieved
+    model_fps       1000 / inference_ms -- the rate the model alone could sustain
+    model           yolov8 | yolo26 | maskrcnn | rfdetr
+    dataset         custom | taco | richard -- what the checkpoint was trained on
+    stream_fps      the rate the frames arrived at, which is what caps `fps`
+    extras          NEW -- see below
+    n_glass         NEW -- how many of this frame's detections were glass
+    n_metal         NEW -- ditto, metal
+    n_paper         NEW -- ditto, paper
+    n_plastic       NEW -- ditto, plastic
+
+There are two speeds here and they answer different questions. inference_ms is
+what the architecture costs and is the only one that distinguishes a fast model
+from a faster one. loop_ms is bounded below by the frame source -- a 15 Hz
+recording cannot deliver faster than 66.7 ms per frame no matter how quick the
+model is -- so `fps` flattens out at stream_fps and should not be read as a
+model's capability.
+
+n_glass, n_metal, n_paper, n_plastic
+    The per-class breakdown of n_detections. They always sum exactly to
+    n_detections (verified on every row of both reference runs). The columns are
+    named after the checkpoint's own classes, so a model with different classes
+    produces differently named columns -- read them by name, not by position.
+
+    These make the per-frame file enough for "how much plastic was in view over
+    time" without opening the per-object file at all.
+
+extras
+    Which optional per-frame work this run did, and therefore WHETHER ITS loop_ms
+    CAN BE COMPARED WITH ANOTHER RUN'S. One of:
+
+        (empty)          the default fast path
+        objects          the mask-median depth measurement was on
+        video            a video was being written
+        objects+video    both
+
+    Two runs are comparable on loop_ms when their `extras` agree. The mask-median
+    measurement costs about 3.4 ms per frame at five detections, which is real but
+    small against a 66.7 ms frame period; writing the video is handed to a
+    background thread and a separate encoder process, so it costs the loop
+    essentially nothing. inference_ms is unaffected by either, always.
+
+    The column exists so this is answerable from the file rather than from memory
+    about which flags a run used. A run with --objects --centre-depth reports an
+    empty `extras`, correctly: it writes the per-object CSV while taking the
+    identical fast code path.
+
+    Logs written before this column existed simply do not have it, and still read
+    and plot fine.
+
+
+================================================================================
+PART 3 -- USING THE TWO TOGETHER
+================================================================================
+
+They join on `frame`. Every row of the per-object file belongs to exactly one row
+of the per-frame file, and the number of object rows for a frame equals that
+frame's n_detections.
+
+Python, no dependencies beyond the standard library:
+
+    import csv
+    rows = list(csv.DictReader(open("....-objects.csv")))
+    # distinct objects seen in the whole run
+    print(len({r["object_id"] for r in rows}))
+    # how many frames each object was visible for
+    import collections
+    print(collections.Counter(r["object_id"] for r in rows))
+
+pandas:
+
+    import pandas as pd
+    stem    = "2026-10-27-210952-yolov8-custom"      # the run you want
+    objects = pd.read_csv(f"{stem}-objects.csv")
+    frames  = pd.read_csv(f"{stem}.csv")
+
+    # blanks arrive as NaN and are skipped by mean(); no filtering needed
+    objects.groupby("object_id").Z_m.mean()
+
+    # one class per object, by majority vote over its rows
+    objects.groupby("object_id").class_name.agg(lambda s: s.mode()[0])
+
+    # only the well-supported distances
+    good = objects[objects.depth_px / objects.mask_px > 0.5]
+
+    # object rows alongside that frame's timing
+    merged = objects.merge(frames, on="frame", suffixes=("", "_frame"))
+
+    # each object's orientation, averaged the way an ANGLE has to be -- a plain
+    # .mean() on this column is wrong near the 180/0 wrap. See orientation_deg.
+    import numpy as np
+    def mean_axis_deg(s):
+        th = np.radians(2 * s.dropna())
+        if th.empty:
+            return np.nan
+        mean = np.degrees(np.arctan2(np.sin(th).mean(),
+                                     np.cos(th).mean())) / 2 % 180
+        return 0.0 if mean >= 180 else mean      # -1e-15 % 180 is 180.0, not 0.0
+    objects.groupby("object_id").orientation_deg.agg(mean_axis_deg)
+
+Sanity checks worth running on an unfamiliar pair of files:
+
+    - object rows per frame == that frame's n_detections
+    - n_glass + n_metal + n_paper + n_plastic == n_detections, on every row
+    - no (frame, object_id) pair appears twice
+    - elapsed_s agrees between the two files for the same frame
+    - no Z_m is exactly 0 (a 0 would mean the blank-vs-zero rule had been broken)
+    - every orientation_deg is either blank or in [0, 180) -- a 180.0 would mean
+      the wrap had been broken somewhere -- and it is blank on exactly the rows
+      where mask_px is 0 or 1
+
+WHERE THE NUMBERS IN THIS DOCUMENT COME FROM
+
+    They are measurements from two real runs, both yolo8 / original-finetune-
+    augment at --conf 0.4, replayed from the bags in rosbags/ with --objects:
+
+        20261016_231841_clutter_med      143 frames,  702 object rows,
+                                          7 distinct objects, Z_m 0.671-0.844 m
+        20261016_232523_clutter_high2    142 frames, 1387 object rows,
+                                         16 distinct objects, Z_m 0.677-0.821 m
+
+    Those two run folders have since been cleared out of runs/camera/, so the
+    paths are not reproduced here -- the figures are quoted to show the shape of
+    real data, not as files to go and open. Re-running the commands in Part 4
+    produces equivalent ones.
+
+
+================================================================================
+PART 4 -- MAKING THESE FILES
+================================================================================
+
+    # the fast default: per-frame CSV only, timings comparable with older runs
+    python camera/segmentation_realsense.py \
+        --rosbag rosbags/20261016_231841_clutter_med.db3 \
+        --model yolo8 --variant original-finetune-augment --conf 0.4 --plot
+
+    # add the per-object CSV, the mask-median depth, and a video for slides
+    python camera/segmentation_realsense.py \
+        --rosbag rosbags/20261016_231841_clutter_med.db3 \
+        --model yolo8 --variant original-finetune-augment --conf 0.4 \
+        --objects --save-video --show-ids --show-axis --plot
+
+Flags that change what ends up in these files:
+
+    --objects        write the per-object CSV, and measure distance over each
+                     object's mask instead of at one pixel
+    --centre-depth   with --objects: keep the cheap single-pixel distance, so
+                     depth_source becomes centre-pixel and mask_px stays 0 --
+                     and orientation_deg stays blank
+    --no-track       with --objects: object_id becomes the index within the frame
+                     instead of an id that follows the object
+    --show-ids       draw the object id in the video's labels
+    --show-axis      draw each object's principal axis -- the orientation_deg
+                     column -- in the window and the video. Implies --objects;
+                     refuses to run with --centre-depth
+    --flat           put the files straight in --out-dir, with no run subfolder
+    --no-log         write no CSV at all
+
+`--help` lists the rest. --list-models prints the available checkpoints.

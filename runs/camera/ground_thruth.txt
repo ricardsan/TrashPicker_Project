@@ -1,0 +1,5 @@
+Class paper, glass, plastic, metal,
+Medium Clutter 3,0,1,1,
+High Clutter 3,3,0,3,
+Stacked Objects 2,1,1,1,
+

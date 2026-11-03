@@ -1,0 +1,14 @@
+yolovenv/
+__pycache__/
+
+dataset_v3/
+
+dataset_v4/
+
+dataset_5fold/
+
+sync_public.ps1
+
+venv/
+
+weights_backup_original/

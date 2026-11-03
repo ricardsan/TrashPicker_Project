@@ -1,0 +1,36 @@
+{
+ "what_this_is": "provenance for the COCO files in datasets/dataset_seg/annotations",
+ "script": "other_models/prepare_data.py",
+ "created": "2026-10-16T15:10:24.466737+00:00",
+ "source": {
+  "images": "datasets/dataset_seg/images",
+  "labels": "datasets/dataset_seg/labels"
+ },
+ "coordinate_frame": "EXIF-upright pixels, i.e. exactly what cv2.imread returns",
+ "splits": {
+  "train": {
+   "images": 611,
+   "annotations": 1499,
+   "per_class": {
+    "glass": 333,
+    "metal": 361,
+    "paper": 389,
+    "plastic": 416
+   },
+   "labels_without_image": [],
+   "box_only_lines": 0
+  },
+  "val": {
+   "images": 152,
+   "annotations": 345,
+   "per_class": {
+    "glass": 76,
+    "metal": 71,
+    "paper": 101,
+    "plastic": 97
+   },
+   "labels_without_image": [],
+   "box_only_lines": 0
+  }
+ }
+}

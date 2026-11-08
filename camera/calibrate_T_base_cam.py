@@ -5,24 +5,46 @@ Camera -> Robot kalibrācija ar ChArUco dēli (viss vienā skriptā).
 2. Kamera nosaka dēļa pozu, ekrānā parāda P0/P1/P2 punktus.
 3. Ar robotu (jogging) aizved TCP uz tiem punktiem, ievadi koordinātas (mm).
 4. Skripts izrēķina T_base_cam, parāda kļūdu, saglabā .npy.
+
+    python camera/calibrate_T_base_cam.py                        # A2 dēlis -> T_base_cam.npy
+    python camera/calibrate_T_base_cam.py --board home50 --output rosbags/<batch>/T_base_cam.npy
+
+Dēļu parametri ir camera/charuco.py (BOARDS).
 """
+
+import argparse
+import sys
+from pathlib import Path
 
 import pyrealsense2 as rs
 import numpy as np
 import cv2
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from camera.charuco import (BOARDS, make_board, reference_distances_mm,  # noqa: E402
+                            reference_points)
+
+_parser = argparse.ArgumentParser(description="Camera -> robot calibration with a ChArUco board.")
+_parser.add_argument("--board", choices=sorted(BOARDS), default="a2",
+                     help="which board lies in the work area (default: a2, the lab board)")
+_parser.add_argument("--output", default="T_base_cam.npy",
+                     help="where to save T_base_cam (default: T_base_cam.npy in the current folder)")
+_args = _parser.parse_args()
+
 # ====================================
-# ChArUco dēļa parametri (A2 dēlis, apstiprināti ar find_board.py)
+# ChArUco dēļa parametri (camera/charuco.py)
 # ====================================
 
-SQUARES_X = 6          # lauciņu skaits pa horizontāli
-SQUARES_Y = 7          # lauciņu skaits pa vertikāli
-SQUARE_LENGTH = 0.060  # lauciņa izmērs metros (60 mm)
-MARKER_LENGTH = 0.043  # markera izmērs metros (43 mm)
-ARUCO_DICT = cv2.aruco.DICT_4X4_50
-LEGACY_PATTERN = True
+BOARD_SPEC = BOARDS[_args.board]
+SQUARES_X = BOARD_SPEC.squares_x
+SQUARES_Y = BOARD_SPEC.squares_y
+SQUARE_LENGTH = BOARD_SPEC.square_m
+MARKER_LENGTH = BOARD_SPEC.marker_m
+EXPECTED_D01_MM, EXPECTED_D02_MM = reference_distances_mm(BOARD_SPEC)
 
-OUTPUT_FILE = "T_base_cam.npy"
+OUTPUT_FILE = _args.output
+print(f"Dēlis: {_args.board} ({SQUARES_X}x{SQUARES_Y}, {SQUARE_LENGTH * 1000:.0f} mm), "
+      f"saglabās: {OUTPUT_FILE}")
 
 # ====================================
 # RealSense
@@ -48,26 +70,11 @@ dist_coeffs = np.array(intr.coeffs, dtype=np.float64)
 # ChArUco dēlis
 # ====================================
 
-aruco_dict = cv2.aruco.getPredefinedDictionary(ARUCO_DICT)
-board = cv2.aruco.CharucoBoard(
-    (SQUARES_X, SQUARES_Y),
-    SQUARE_LENGTH,
-    MARKER_LENGTH,
-    aruco_dict
-)
-board.setLegacyPattern(LEGACY_PATTERN)
+board, charuco_detector = make_board(BOARD_SPEC)
 
-charuco_detector = cv2.aruco.CharucoDetector(board)
-
-# Atsauces punkti dēļa koordinātās (metros) - iekšējie šaha stūri
-cols = SQUARES_X - 1   # 5
-rows = SQUARES_Y - 1   # 6
-
-ref_points_board = np.array([
-    [1 * SQUARE_LENGTH,    1 * SQUARE_LENGTH,    0.0],  # P0
-    [cols * SQUARE_LENGTH, 1 * SQUARE_LENGTH,    0.0],  # P1: +240mm pa X no P0
-    [1 * SQUARE_LENGTH,    rows * SQUARE_LENGTH, 0.0],  # P2: +300mm pa Y no P0
-], dtype=np.float64)
+# Atsauces punkti dēļa koordinātās (metros) - iekšējie šaha stūri.
+# P1 ir pa X no P0, P2 pa Y no P0 (A2: +240 mm un +300 mm).
+ref_points_board = reference_points(BOARD_SPEC)
 
 
 def transform_points(T, pts):
@@ -221,9 +228,9 @@ for i in range(3):
 d01 = np.linalg.norm(ref_points_robot[1] - ref_points_robot[0]) * 1000
 d02 = np.linalg.norm(ref_points_robot[2] - ref_points_robot[0]) * 1000
 print()
-print(f"Parbaude: P0-P1 attalums = {d01:.1f} mm (jabut ~240)")
-print(f"          P0-P2 attalums = {d02:.1f} mm (jabut ~300)")
-if abs(d01 - 240) > 15 or abs(d02 - 300) > 15:
+print(f"Parbaude: P0-P1 attalums = {d01:.1f} mm (jabut ~{EXPECTED_D01_MM:.0f})")
+print(f"          P0-P2 attalums = {d02:.1f} mm (jabut ~{EXPECTED_D02_MM:.0f})")
+if abs(d01 - EXPECTED_D01_MM) > 15 or abs(d02 - EXPECTED_D02_MM) > 15:
     print("BRIDINAJUMS: attalumi neatbilst delim - punkti var but sajaukti!")
 
 # ====================================
@@ -255,6 +262,7 @@ if errors.mean() > 5.0:
     print("  - nepareizi dela parametri (SQUARE_LENGTH?)")
     print("Iesaku atkartot.")
 
+Path(OUTPUT_FILE).parent.mkdir(parents=True, exist_ok=True)
 np.save(OUTPUT_FILE, T_base_cam)
 print()
 print(f"Saglabats: {OUTPUT_FILE}")

@@ -1,10 +1,27 @@
+"""Find which ChArUco grid is in view, given its square size.
+
+    python camera/find_board.py --square 40     # home board, 40 mm squares
+    python camera/find_board.py --square 50     # home board, 50 mm squares
+    python camera/find_board.py --square 60 --marker 43   # lab A2 board
+
+Measure the square and the black marker with a ruler; --marker defaults to 0.75 of the square.
+The last line printed is a BOARDS entry to paste into camera/charuco.py.
+"""
+import argparse
+
 import pyrealsense2 as rs
 import numpy as np
 import cv2
 
-# === nomaini pec dela: majas A4 = 0.040, laba A2 = 0.060 ===
-SQUARE = 0.040
-MARKER = SQUARE * 0.75
+_parser = argparse.ArgumentParser(description="Find the ChArUco grid in view.")
+_parser.add_argument("--square", type=float, default=40.0, help="square side in mm (default: 40)")
+_parser.add_argument("--marker", type=float, default=None,
+                     help="marker side in mm (default: 0.75 of --square)")
+_args = _parser.parse_args()
+
+SQUARE = _args.square / 1000.0
+MARKER = (_args.marker / 1000.0) if _args.marker else SQUARE * 0.75
+print(f"square {SQUARE * 1000:.1f} mm, marker {MARKER * 1000:.1f} mm")
 
 pipeline = rs.pipeline()
 config = rs.config()
@@ -59,6 +76,8 @@ print()
 if best:
     print(f"=== BEST: dict={best[0]}, (cols,rows)=({best[1]},{best[2]}), "
           f"legacy={best[3]}, corners={best[4]} ===")
+    print(f'paste into camera/charuco.py BOARDS:  "home{SQUARE * 1000:.0f}": BoardSpec({best[1]}, '
+          f'{best[2]}, {SQUARE:.4f}, {MARKER:.4f}, cv2.aruco.DICT_{best[0]}, legacy={best[3]}),')
 else:
     print("=== ChArUco sturi nekur neatradas ===")
 

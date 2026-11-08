@@ -1,6 +1,8 @@
 """Write calibration_rosbag_demo.txt: calibration.txt, levelled to the sheet in the recorded clips.
 
     python robot/align_to_recording.py
+    # a batch kept in its own folder, filmed from another camera position than the clips in rosbags/
+    python robot/align_to_recording.py --clips rosbags/home_2026-11 --output robot/calibration_home_demo.txt
 
 The clips in rosbags/ were not filmed where calibration.txt says the camera is. Through the real
 calibration their sheet reads about z = 628 mm, tilted, and above the approach plane, so going to it
@@ -226,10 +228,14 @@ def format_calibration(T: np.ndarray, T_from: np.ndarray, up_cam: np.ndarray, he
         f" [ 0 0 0 1]]\n")
 
 
-def available_clips() -> list[str]:
-    clips = sorted(path.name for path in ROSBAG_DIR.glob("*.db3"))
+def available_clips(folder=ROSBAG_DIR) -> list[Path]:
+    """Every .db3 directly in `folder`, not in its subfolders. They must all share one camera position."""
+    folder = Path(folder)
+    if not folder.is_dir():
+        raise SystemExit(f"no such folder: {folder}")
+    clips = sorted(folder.glob("*.db3"))
     if not clips:
-        raise SystemExit(f"no clips in {ROSBAG_DIR}")
+        raise SystemExit(f"no clips in {folder}")
     return clips
 
 
@@ -239,14 +245,19 @@ def main(argv=None) -> int:
                         help=f"the calibration to level (default: {DEFAULT_CALIBRATION.name})")
     parser.add_argument("--output", default=DEFAULT_OUTPUT, metavar="FILE",
                         help=f"where to write it (default: {DEFAULT_OUTPUT.name})")
+    parser.add_argument("--clips", default=None, metavar="FOLDER",
+                        help=f"the folder of .db3 clips to measure, all filmed from one camera "
+                             f"position (default: {ROSBAG_DIR.relative_to(ROOT)}). Subfolders are "
+                             f"not read.")
     args = parser.parse_args(argv)
 
     T_from = load_T_base_cam(args.calibration)
     rng = np.random.default_rng(SEED)
-    clips, planes = available_clips(), []
+    clips = available_clips(args.clips) if args.clips else available_clips()
+    planes = []
     for clip in clips:
         for plane in measure_clip(clip, rng):
-            print(f"{clip}: {plane.height_m * MM_PER_M:.1f} mm above the sheet, "
+            print(f"{Path(clip).name}:{plane.height_m * MM_PER_M:.1f} mm above the sheet, "
                   f"{plane.on_plane * 100:.1f}% of the points on it, rms "
                   f"{plane.rms_m * MM_PER_M:.1f} mm")
             planes.append(plane)

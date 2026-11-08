@@ -216,6 +216,34 @@ def written(tmp_path, monkeypatch, planes) -> tuple:
     return align.main(["--output", str(path)]), path
 
 
+def test_clips_reads_only_the_db3_files_directly_in_the_folder(tmp_path):
+    (tmp_path / "b.db3").write_bytes(b"")
+    (tmp_path / "a.db3").write_bytes(b"")
+    (tmp_path / "notes.json").write_text("{}")
+    (tmp_path / "old").mkdir()
+    (tmp_path / "old" / "c.db3").write_bytes(b"")
+    assert align.available_clips(tmp_path) == [tmp_path / "a.db3", tmp_path / "b.db3"]
+
+
+def test_clips_refuses_a_missing_or_empty_folder(tmp_path):
+    with pytest.raises(SystemExit, match="no such folder"):
+        align.available_clips(tmp_path / "missing")
+    with pytest.raises(SystemExit, match="no clips"):
+        align.available_clips(tmp_path)
+
+
+def test_main_measures_the_clips_folder_it_is_given(tmp_path, monkeypatch):
+    batch = tmp_path / "batch"
+    batch.mkdir()
+    (batch / "20261107_120000_sep3_a.db3").write_bytes(b"")
+    measured = []
+    monkeypatch.setattr(align, "measure_clip", lambda clip, rng: measured.append(clip) or [plane()])
+    path = tmp_path / "demo.txt"
+    assert align.main(["--clips", str(batch), "--output", str(path)]) == 0
+    assert measured == [batch / "20261107_120000_sep3_a.db3"]
+    assert "Measured from 20261107_120000_sep3_a:" in path.read_text(encoding="utf-8")
+
+
 def test_the_file_says_it_is_synthetic_and_loads_back_as_what_was_computed(tmp_path, monkeypatch):
     code, path = written(tmp_path, monkeypatch, [plane()])
     assert code == 0

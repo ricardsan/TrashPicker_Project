@@ -21,6 +21,7 @@ sys.path.insert(0, str(ROOT))
 
 from camera.rosbag_frames import (ExportedFrameSource, default_export_dir,  # noqa: E402
                                   export_bag, is_exported)
+from camera.segmentation_realsense import depth_map_metres  # noqa: E402
 from robot.operator_keys import QUIT_KEYS  # noqa: E402
 from robot.perception import (Target, draw_targets, measure_targets,  # noqa: E402
                               sort_nearest_first)
@@ -46,6 +47,10 @@ class Snapshot:
     annotated: np.ndarray
     targets: list[Target]       # nearest the camera first
     dropped: list[str]          # why the other detections are not in the list
+    # The raw frame, for the experiment log's point cloud. None where a source cannot give them.
+    image: np.ndarray | None = None
+    metres: np.ndarray | None = None
+    intrinsics: object = None
 
 
 def resolve_bag(name) -> Path:
@@ -104,12 +109,12 @@ def started(source):
 
 
 def preview_until(source, detector, T_base_cam, keys, *, stop_at: int | None = None,
-                  window: str = WINDOW) -> Snapshot | None:
+                  window: str = WINDOW, view=None) -> Snapshot | None:
     """Show inference frame by frame, and return the Snapshot of the frame to work from.
 
     With `stop_at` that is frame number `stop_at`; without it, the frame on screen when 'n' is
     pressed, once the depth has settled. None means the operator quit. `source` must be running:
-    see started().
+    see started(). `view`, a live_view.LiveView, also gets every frame.
     """
     settling = settle_frames(source)
     # A key pressed while the robot was going home was not pressed at this picture.
@@ -135,6 +140,8 @@ def preview_until(source, detector, T_base_cam, keys, *, stop_at: int | None = N
         targets = sort_nearest_first(targets)
         annotated = draw_targets(image, targets, detector.names)
         cv2.imshow(window, annotated)
+        if view is not None:
+            view.frame(index, image, depth_frame, intrinsics, targets, annotated)
 
         key = keys.poll()
         if key in QUIT_KEYS:
@@ -151,4 +158,5 @@ def preview_until(source, detector, T_base_cam, keys, *, stop_at: int | None = N
                 continue
         elif index != stop_at:
             continue
-        return Snapshot(index, annotated, targets, dropped)
+        return Snapshot(index, annotated, targets, dropped, image=image,
+                        metres=depth_map_metres(depth_frame), intrinsics=intrinsics)

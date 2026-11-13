@@ -47,6 +47,8 @@ from robot.extrinsics import (HARDCODED_NAME, HARDCODED_T_BASE_CAM,  # noqa: E40
                               check_transform, is_synthetic, load_T_base_cam)
 from robot.frame_selection import (open_recording, preview_until,  # noqa: E402
                                    resolve_frame_index, settle_frames, started)
+from robot.experiment import (DEFAULT_DIR as EXPERIMENTS_DIR, ExperimentLog,  # noqa: E402
+                              ask_verdict, calibration_meta, read_ground_truth)
 from robot.operator_keys import OperatorKeys  # noqa: E402
 from robot.perception import format_targets  # noqa: E402
 from robot.pick_sequence import PickAborted, check_drop_locations, run_picks  # noqa: E402
@@ -84,19 +86,35 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--calibration", default=None, metavar="FILE",
                    help=f"T_base_cam, a text file like calibration.txt or a .npy (default: "
                         f"{HARDCODED_NAME}, for a virtual controller on this machine only)")
+    p.add_argument("--experiment", default=None, metavar="NAME",
+                   help="log this run as an experiment: snapshot, targets, every pick with your "
+                        "y/n/x verdict, and the scene point cloud, in experiments/<date>_NAME/")
+    p.add_argument("--experiments-dir", default=None, metavar="DIR",
+                   help=f"where experiments go (default: {EXPERIMENTS_DIR.relative_to(ROOT)})")
+    p.add_argument("--ground-truth", default=None, metavar="CSV",
+                   help="with --experiment: class,x_mm,y_mm,axis_deg of each object in the base "
+                        "frame, to measure position and angle errors")
+    p.add_argument("--viz", action="store_true",
+                   help="open a live 3D view (Rerun) of the RGB image, point cloud and planned "
+                        "grasps in the base frame, to run beside RobotStudio")
     return p
 
 
 def check_args(parser: argparse.ArgumentParser, args) -> None:
     """Reject flags that mean nothing together, rather than quietly ignoring them."""
     if args.mock:
-        for flag in ("model", "conf", "rosbag", "frame", "calibration"):
+        for flag in ("model", "conf", "rosbag", "frame", "calibration", "experiment",
+                     "ground_truth"):
             if getattr(args, flag) is not None:
-                parser.error(f"--{flag} means nothing with --mock, which loads no model and no "
-                             f"frames")
+                parser.error(f"--{flag.replace('_', '-')} means nothing with --mock, which loads "
+                             f"no model and no frames")
+        if args.viz:
+            parser.error("--viz means nothing with --mock, which loads no model and no frames")
     if args.frame is not None and args.rosbag is None:
         parser.error("--frame needs --rosbag: with the camera, the frame is the one on screen "
                      "when 'n' is pressed")
+    if (args.ground_truth or args.experiments_dir) and not args.experiment:
+        parser.error("--ground-truth and --experiments-dir need --experiment NAME")
 
 
 def run_pick_session(args) -> int:
@@ -117,6 +135,12 @@ def run_pick_session(args) -> int:
         weights = check_weights(resolve_custom_weights(args.model or DEFAULT_WEIGHTS))
     except (FileNotFoundError, RuntimeError) as failure:
         raise SystemExit(str(failure)) from failure
+    if args.ground_truth:
+        read_ground_truth(args.ground_truth)        # a bad file fails here, not after the picks
+    view = None
+    if args.viz:
+        from robot.live_view import LiveView
+        view = LiveView(T_base_cam)
 
     if args.rosbag:
         source = open_recording(args.rosbag)
@@ -149,7 +173,8 @@ def run_pick_session(args) -> int:
                       "The keys work in the image window or in this terminal.")
             else:
                 print(f"\nRunning inference up to frame {stop_at}. Press 'q' or ESC to quit.")
-            snapshot = preview_until(source, detector, T_base_cam, keys, stop_at=stop_at)
+            snapshot = preview_until(source, detector, T_base_cam, keys, stop_at=stop_at,
+                                     view=view)
 
         if snapshot is None:
             print("Quit before picking anything. The robot is at home.")
@@ -163,8 +188,33 @@ def run_pick_session(args) -> int:
             return 0
         print(format_targets(snapshot.targets))
 
-        completed = run_picks(robot, snapshot.targets, keys)
+        log = None
+        if args.experiment:
+            log = ExperimentLog(args.experiment, {
+                "source": source.describe(), "rosbag": args.rosbag or "",
+                "frame": snapshot.frame_index, "model": str(weights),
+                "conf": DEFAULT_CONF if args.conf is None else args.conf,
+                "calibration": str(calibration), "synthetic_calibration": synthetic,
+                "T_base_cam": calibration_meta(T_base_cam), "host": args.host,
+            }, root=args.experiments_dir or EXPERIMENTS_DIR, ground_truth=args.ground_truth)
+            log.snapshot(snapshot, T_base_cam)
+            print(f"experiment: {log.dir}")
+        if view is not None:
+            view.snapshot(snapshot.frame_index, snapshot.targets)
+
+        def on_picked(rank, target, ran):
+            verdict = (ask_verdict(keys) if log is not None else "") if ran else "not run"
+            if log is not None:
+                log.pick(rank, target, ran, verdict)
+            if view is not None:
+                view.pick_result(rank, target, verdict or "done")
+
+        hook = on_picked if (log is not None or view is not None) else None
+        completed = run_picks(robot, snapshot.targets, keys, on_picked=hook)
         print(f"\nFinished {completed} pick sequence(s).")
+        if log is not None:
+            log.finish(completed)
+            print(f"experiment written to {log.dir}")
     return 0
 
 

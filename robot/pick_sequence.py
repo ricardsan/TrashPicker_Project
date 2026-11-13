@@ -84,6 +84,19 @@ def gripper_rz_deg(base_axis_deg: float | None) -> float | None:
     return (base_axis_deg + 90.0 - FINGER_CLOSE_AXIS_AT_RZ0_DEG + 90.0) % 180.0 - 90.0
 
 
+def grasp_z_for(target: Target) -> float:
+    """The z the TCP goes down to for `target`. One place, so the log and the viewer agree with the move."""
+    perceived_z = target.xyz_base_mm[2]
+    # #############################################################################################
+    # >>> PLACEHOLDER: THE CORRECT GRASP Z GOES HERE <<<
+    # This is the z of the point the camera saw, moved into the base frame, which is the object's
+    # top surface at its centroid. The TCP stops exactly there, so the fingertips reach the surface
+    # and do not straddle the object. Replace it with the height to grip at, for example by going
+    # below the surface by some depth, or a per-class height. Everything below uses grasp_z.
+    return -perceived_z
+    # #############################################################################################
+
+
 def pick_and_place(robot: ArtCameraClient, target: Target) -> bool:
     """One whole pick, starting and ending at home. True if the whole sequence ran.
 
@@ -94,16 +107,8 @@ def pick_and_place(robot: ArtCameraClient, target: Target) -> bool:
     opening or going home from there would drop whatever it holds.
     """
     cls = target.cls
-    x, y, perceived_z = target.xyz_base_mm
-
-    # #############################################################################################
-    # >>> PLACEHOLDER: THE CORRECT GRASP Z GOES HERE <<<
-    # This is the z of the point the camera saw, moved into the base frame, which is the object's
-    # top surface at its centroid. The TCP stops exactly there, so the fingertips reach the surface
-    # and do not straddle the object. Replace it with the height to grip at, for example by going
-    # below the surface by some depth, or a per-class height. Everything below uses grasp_z.
-    grasp_z = -perceived_z
-    # #############################################################################################
+    x, y, _ = target.xyz_base_mm
+    grasp_z = grasp_z_for(target)
 
     # None means a one-pixel mask, which keeps pHome's orientation. On a round object the angle is
     # arbitrary, and the turn is harmless. The drop move carries no rz, so the tool comes back to
@@ -153,14 +158,22 @@ def pick_and_place(robot: ArtCameraClient, target: Target) -> bool:
     return True
 
 
-def run_picks(robot: ArtCameraClient, targets, keys) -> int:
-    """Work down the list, asking between picks. Returns how many whole sequences ran."""
+def run_picks(robot: ArtCameraClient, targets, keys, on_picked=None) -> int:
+    """Work down the list, asking between picks. Returns how many whole sequences ran.
+
+    `on_picked(position, target, ran)`, when given, is called after each target with whether its
+    whole sequence ran: the experiment log and the live view hang off it. It runs with the robot at
+    home and may ask the operator for a key.
+    """
     completed = 0
     for position, target in enumerate(targets, 1):
         x, y, z = target.xyz_base_mm
         print(f"\n--- Target {position} of {len(targets)}: {target.name}, base "
               f"({x:.1f}, {y:.1f}, {z:.1f}) mm, {target.z_cam_m:.3f} m from the camera")
-        completed += pick_and_place(robot, target)
+        ran = pick_and_place(robot, target)
+        completed += ran
+        if on_picked is not None:
+            on_picked(position, target, ran)
 
         if position == len(targets):
             print("\nThat was the last detection in the list.")

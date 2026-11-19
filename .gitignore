@@ -12,3 +12,7 @@ sync_public.ps1
 venv/
 
 weights_backup_original/
+
+# unpacked recordings (rebuilt from the .db3) and home recordings (shared by link, too big for git)
+rosbags/export/
+rosbags/home_2026-11/

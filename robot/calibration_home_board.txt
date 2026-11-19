@@ -1,0 +1,19 @@
+SYNTHETIC. NOT A CALIBRATION. NEVER USE THIS ON THE REAL ROBOT.
+
+Written by robot/board_demo_calibration.py from the ChArUco board in 20261119_200126_board_calib_final.
+The client refuses it for any host other than this machine. It is for RobotStudio.
+
+Measured, board home40, 26 of 26 frames used:
+  the camera is 789.0 mm above the board, tilted 12.12 degrees from straight down.
+  Frames agree to 0.91 mm and 0.237 degrees; worst
+  reprojection 0.17 px.
+Chosen, not measured:
+  the board's centre is at x = 450 mm, y = 100 mm, z = 70 mm,
+  its x axis turned -90.0 degrees from the base's +x.
+So positions relative to the board are real. Where the board is relative to the robot is not.
+
+T_base_cam:
+[[-0.006546 -0.986643  0.162767  0.242678]
+ [-0.990749  0.028462  0.132686  0.026727]
+ [-0.135546 -0.160393 -0.977702  0.858990]
+ [ 0 0 0 1]]

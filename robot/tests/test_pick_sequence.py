@@ -90,8 +90,13 @@ def test_only_a_z_above_the_approach_plane_points_at_the_extrinsics(client, caps
     assert "extrinsics in use" not in capsys.readouterr().out
 
 
-def test_a_rejected_position_points_at_the_extrinsics_and_at_no_particular_file(client, capsys):
-    pick_and_place(client, make_target(base=(100.0, 0.0, 120.0)))
+def test_a_rejected_position_points_at_the_extrinsics_and_at_no_particular_file(capsys):
+    server, client = session({0: "REJECTED"})
+    try:
+        pick_and_place(client, make_target(base=(400.0, 0.0, 120.0)))
+    finally:
+        client.close()
+        server.__exit__(None, None, None)
     out = capsys.readouterr().out
     assert "extrinsics in use" in out
     assert "calibration_rosbag_demo" not in out and "calibration.txt" not in out
@@ -203,20 +208,6 @@ def test_rejected_over_the_object_skips_it_and_goes_home(capsys):
         server.__exit__(None, None, None)
 
 
-@pytest.mark.parametrize("x, y", [(0.0, 0.0), (250.0, 100.0), (820.0, 0.0), (600.0, -600.0)])
-def test_out_of_reach_does_not_move_the_robot_at_all(client, rapid, capsys, x, y):
-    """Too close to the base or too far out: the arm would fold or stretch, so nothing is sent."""
-    assert pick_and_place(client, make_target(base=(x, y, 120.0))) is False
-    assert rapid.received == []
-    out = capsys.readouterr().out
-    assert "SKIPPED" in out and "reach" in out and "extrinsics in use" in out
-
-
-@pytest.mark.parametrize("x, y", [(300.0, 0.0), (0.0, -800.0), (500.0, 400.0)])
-def test_the_edges_of_the_reach_are_allowed(client, x, y):
-    assert pick_and_place(client, make_target(base=(x, y, 120.0))) is True
-
-
 def test_the_grasp_z_is_the_top_of_the_object_and_stays_above_the_floor():
     from robot.pick_sequence import grasp_z_for
     assert grasp_z_for(make_target(base=(400.0, 0.0, 88.3))) == 88.3
@@ -313,7 +304,8 @@ def test_there_is_no_prompt_after_the_last_target(client, capsys):
 
 def test_a_skipped_target_still_asks_before_the_next(client, rapid):
     """Skipping is not a go-ahead: the operator decides whether the next one is wanted."""
-    targets = [make_target(base=(100.0, 0.0, 120.0)), make_target(base=(350.0, 0.0, 100.0))]
+    targets = [make_target(base=(400.0, 0.0, 900.0)),      # refused by the z guard
+               make_target(base=(350.0, 0.0, 100.0))]
     keys = ScriptedKeys(waited=["c"])
     assert run_picks(client, targets, keys) == 1
     assert keys.asked == ["cs"]

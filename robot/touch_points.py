@@ -14,7 +14,6 @@ controller but this machine: on a real robot, use --z with a safe height.
 from __future__ import annotations
 
 import argparse
-import math
 import sys
 from pathlib import Path
 
@@ -24,8 +23,7 @@ sys.path.insert(0, str(ROOT))
 from robot.art_camera_client import (DEFAULT_HOST, DEFAULT_PORT, ArtCameraClient,  # noqa: E402
                                      MoveRejected, RobotError)
 from robot.board_demo_calibration import _xy  # noqa: E402
-from robot.pick_sequence import (APPROACH_Z_MM, GRASP_Z_MIN_MM, REACH_MAX_MM,  # noqa: E402
-                                 REACH_MIN_MM)
+from robot.pick_sequence import APPROACH_Z_MM, GRASP_Z_MIN_MM  # noqa: E402
 LOCAL_HOSTS = ("127.0.0.1", "localhost", "::1")     # as robot_trash_picker.py, without its imports
 MOVE_CLASS = 0          # a move needs an object class; any non-negative one is only a label
 
@@ -36,11 +34,7 @@ def touch(robot, points, z_mm: float, wait=input) -> list[str]:
     robot.home()
     for number, (x, y) in enumerate(points):
         name = f"P{number} ({x:.0f}, {y:.0f})"
-        reach = math.hypot(x, y)
-        note = ("" if REACH_MIN_MM <= reach <= REACH_MAX_MM else
-                f", {reach:.0f} mm from the base: outside the {REACH_MIN_MM:.0f}..{REACH_MAX_MM:.0f} mm "
-                f"the pick sequence uses")
-        print(f"\n{name}: over it, then down to z = {z_mm:.0f}{note}")
+        print(f"\n{name}: over it, then down to z = {z_mm:.0f}")
         try:
             robot.move_to(MOVE_CLASS, x, y, APPROACH_Z_MM)
             robot.move_to(MOVE_CLASS, x, y, z_mm)
@@ -51,7 +45,7 @@ def touch(robot, points, z_mm: float, wait=input) -> list[str]:
             continue
         wait(f"  at {name}, z = {z_mm:.0f}. Check it in RobotStudio, then press Enter ")
         robot.move_to(MOVE_CLASS, x, y, APPROACH_Z_MM)
-        results.append(f"{name}: reached{note}")
+        results.append(f"{name}: reached")
     robot.home()
     return results
 

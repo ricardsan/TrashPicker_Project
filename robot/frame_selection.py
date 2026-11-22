@@ -22,9 +22,7 @@ sys.path.insert(0, str(ROOT))
 from camera.rosbag_frames import (ExportedFrameSource, default_export_dir,  # noqa: E402
                                   export_bag, is_exported)
 from camera.segmentation_realsense import depth_map_metres  # noqa: E402
-from robot.art_camera_client import Z_TABLE_MM  # noqa: E402
 from robot.operator_keys import QUIT_KEYS  # noqa: E402
-from robot.pick_sequence import REACH_MAX_MM, REACH_MIN_MM  # noqa: E402
 from robot.perception import (Target, draw_targets, measure_targets,  # noqa: E402
                               sort_nearest_first)
 
@@ -110,38 +108,6 @@ def started(source):
         source.stop()
 
 
-def unreachable_mask(intrinsics, T_base_cam: np.ndarray, floor_z_mm: float = Z_TABLE_MM) -> np.ndarray:
-    """True where the floor seen at that pixel is outside the arm's reach, or not seen at all.
-
-    Each pixel's ray is followed down to the floor, z = floor_z_mm, in the base frame.
-    """
-    w, h = int(intrinsics.width), int(intrinsics.height)
-    u, v = np.meshgrid(np.arange(w, dtype=float), np.arange(h, dtype=float))
-    rays = np.stack([(u - intrinsics.ppx) / intrinsics.fx, (v - intrinsics.ppy) / intrinsics.fy,
-                     np.ones_like(u)], axis=-1) @ np.asarray(T_base_cam)[:3, :3].T
-    centre_mm = np.asarray(T_base_cam)[:3, 3] * 1000.0
-    with np.errstate(divide="ignore", invalid="ignore"):
-        scale = (floor_z_mm - centre_mm[2]) / rays[..., 2]
-    x = centre_mm[0] + scale * rays[..., 0]
-    y = centre_mm[1] + scale * rays[..., 1]
-    radius = np.hypot(x, y)
-    seen = np.isfinite(scale) & (scale > 0)
-    return ~(seen & (radius >= REACH_MIN_MM) & (radius <= REACH_MAX_MM))
-
-
-def shade_unreachable(image: np.ndarray, mask: np.ndarray) -> np.ndarray:
-    """The image with the unreachable part tinted red and outlined."""
-    if mask.shape != image.shape[:2] or not mask.any():
-        return image
-    out = image.copy()
-    red = np.zeros_like(out)
-    red[..., 2] = 255
-    out[mask] = cv2.addWeighted(out, 0.6, red, 0.4, 0)[mask]
-    contours, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    cv2.drawContours(out, contours, -1, (0, 0, 255), 2)
-    return out
-
-
 def preview_until(source, detector, T_base_cam, keys, *, stop_at: int | None = None,
                   window: str = WINDOW, view=None) -> Snapshot | None:
     """Show inference frame by frame, and return the Snapshot of the frame to work from.
@@ -154,7 +120,6 @@ def preview_until(source, detector, T_base_cam, keys, *, stop_at: int | None = N
     # A key pressed while the robot was going home was not pressed at this picture.
     keys.drain()
     index = -1
-    reach = None        # (intrinsics key, mask): the mask only changes with the intrinsics
     while True:
         try:
             grabbed = source.grab()
@@ -173,10 +138,7 @@ def preview_until(source, detector, T_base_cam, keys, *, stop_at: int | None = N
         targets, dropped = measure_targets(detector.predict(image), depth_frame, intrinsics,
                                            source.rs, detector.names, T_base_cam)
         targets = sort_nearest_first(targets)
-        size = (int(intrinsics.width), int(intrinsics.height), intrinsics.fx, intrinsics.ppx)
-        if reach is None or reach[0] != size:
-            reach = (size, unreachable_mask(intrinsics, T_base_cam))
-        annotated = draw_targets(shade_unreachable(image, reach[1]), targets, detector.names)
+        annotated = draw_targets(image, targets, detector.names)
         cv2.imshow(window, annotated)
         if view is not None:
             view.frame(index, image, depth_frame, intrinsics, targets, annotated)

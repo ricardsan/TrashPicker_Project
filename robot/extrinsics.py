@@ -39,7 +39,7 @@ MM_PER_M = 1000.0
 #              its 128 settled frames. A plane fitted to the whole sheet gives 789.5 mm.
 #   heading    calibration.txt's, which a clip cannot measure: the smallest rotation gives that tilt.
 #
-# RAPID's Z_TABLE and the z guard's floor still assume a table at 70 mm, not this surface at 0.
+# RAPID's Z_TABLE and the z guard's floor now put the surface at z = 0 too.
 HARDCODED_T_BASE_CAM = np.array([[-0.019634, -0.972549, 0.231866, -0.3900],
                                  [-0.999495, 0.024892, 0.019770, -0.3900],
                                  [-0.024999, -0.231361, -0.972547, 0.7898],

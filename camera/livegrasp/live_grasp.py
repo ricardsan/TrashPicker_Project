@@ -48,7 +48,7 @@ except ImportError:
 # =====================================================================
 
 WEIGHTS = r"runs/detect/train_v4/weights/best.pt"
-T_BASE_CAM_PATH = "T_base_cam.npy"          # 4x4 homogēnā matrica, mm
+T_BASE_CAM_PATH = "T_base_cam.npy"          # 4x4 matrica, METROS
 
 CONF_TH = 0.50
 IOU_TH = 0.45
@@ -241,22 +241,41 @@ def mask_from_box_depth(depth_img_mm, box):
 # 3. TRANSFORMĀCIJA KAMERA -> ROBOTA BĀZE
 # =====================================================================
 
-def load_T_base_cam(path):
+MAX_TRANSLATION_M = 5.0   # kamera ir telpā: lielāka nobīde nozīmē, ka fails ir milimetros
+
+
+def load_T_base_cam(path, required=False):
+    """T_base_cam METROS, kā to saglabā camera/calibrate_T_base_cam.py.
+
+    Fails milimetros tiek pārvērsts metros. Ja faila nav: ar --send programma apstājas (robotu
+    nedrīkst sūtīt ar izdomātu kalibrāciju), bez --send lieto vienības matricu tikai attēlošanai.
+    """
     try:
-        T = np.load(path)
-        assert T.shape == (4, 4)
-        return T
+        T = np.asarray(np.load(path), dtype=np.float64)
+        assert T.shape == (4, 4), f"forma {T.shape}, nevis (4, 4)"
     except Exception as e:
-        print(f"BRĪDINĀJUMS: neizdevās ielādēt {path} ({e}). Lietoju vienības matricu.")
+        if required:
+            raise SystemExit(f"KĻŪDA: neizdevās ielādēt {path} ({e}). Ar --send vajag īstu kalibrāciju.")
+        print(f"BRĪDINĀJUMS: neizdevās ielādēt {path} ({e}). Lietoju vienības matricu: "
+              f"bāzes koordinātas būs nepareizas.")
         return np.eye(4)
+    if np.abs(T[:3, 3]).max() > MAX_TRANSLATION_M:
+        print(f"BRĪDINĀJUMS: {path} nobīde {T[:3, 3]} izskatās milimetros; pārvēršu metros.")
+        T = T.copy()
+        T[:3, 3] /= 1000.0
+    return T
 
 
 def pixel_to_base(intr, T, u, v, depth_mm):
-    """Pikselis + dziļums -> XYZ kameras rāmī (mm) -> XYZ bāzes rāmī (mm)."""
+    """Pikselis + dziļums -> XYZ kameras rāmī (m) -> XYZ bāzes rāmī (mm).
+
+    T ir METROS, tāpēc to pielieto punktam metros un tikai pēc tam pārvērš milimetros. Ja punktu
+    pārvērš mm pirms T, rotācija ir tā pati, bet nobīde tiek pieskaitīta kā mm, un punkts
+    nonāk ~1.4 m no īstās vietas.
+    """
     p_cam_m = rs.rs2_deproject_pixel_to_point(intr, [float(u), float(v)], depth_mm / 1000.0)
-    p_cam = np.array([p_cam_m[0] * 1000.0, p_cam_m[1] * 1000.0, p_cam_m[2] * 1000.0, 1.0])
-    p_base = T @ p_cam
-    return p_base[:3]
+    p_base_m = T @ np.array([p_cam_m[0], p_cam_m[1], p_cam_m[2], 1.0])
+    return p_base_m[:3] * 1000.0
 
 
 # =====================================================================
@@ -453,7 +472,7 @@ def main():
 
     model = YOLO(args.weights)
     names = model.names if hasattr(model, "names") else {i: n for i, n in enumerate(CLASS_NAMES)}
-    T = load_T_base_cam(T_BASE_CAM_PATH)
+    T = load_T_base_cam(T_BASE_CAM_PATH, required=args.send)
 
     pipe, depth_scale = build_pipeline(args.bag)
     align = rs.align(rs.stream.color)          # obligati! citadi dzilums nesakrit

@@ -1,0 +1,7 @@
+board_floor_overlay.png: 770 x 1420 px, 1 px = 1.0 mm, on the floor (z = 0)
+  X from -40 to 1380 mm  (image top edge = X 1380, bottom edge = X -40)
+  Y from -390 to 380 mm  (image left edge = Y 380, right edge = Y -390)
+  size: 1420 mm along X, 770 mm along Y
+  centre: X 670, Y -5
+  corners: top-left (1380, 380)  top-right (1380, -390)  bottom-left (-40, 380)  bottom-right (-40, -390)
+  from 20261122_121613_board_measured, last frame; calibration calibration_home_board.txt

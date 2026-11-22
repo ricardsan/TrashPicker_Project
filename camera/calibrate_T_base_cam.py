@@ -21,14 +21,22 @@ import numpy as np
 import cv2
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from camera.charuco import (BOARDS, make_board, reference_distances_mm,  # noqa: E402
-                            reference_points)
+from camera.charuco import (BOARDS, detect_pose, make_board,  # noqa: E402
+                            reference_distances_mm, reference_points)
+from robot.board_demo_calibration import MAX_RMS_PX, MIN_FRAMES, combine_poses  # noqa: E402
+
+MAX_DISTANCE_ERROR_MM = 15.0    # P0-P1 / P0-P2 pret dēli: vairāk = sajaukti punkti
+MAX_MEAN_ERROR_MM = 5.0         # Kabsch atlikums: vairāk = TCP nebija uz stūra vai dēlis kustējās
 
 _parser = argparse.ArgumentParser(description="Camera -> robot calibration with a ChArUco board.")
 _parser.add_argument("--board", choices=sorted(BOARDS), default="a2",
                      help="which board lies in the work area (default: a2, the lab board)")
 _parser.add_argument("--output", default="T_base_cam.npy",
                      help="where to save T_base_cam (default: T_base_cam.npy in the current folder)")
+_parser.add_argument("--frames", type=int, default=30,
+                     help="how many frames after SPACE the board pose is averaged over (default: 30)")
+_parser.add_argument("--force", action="store_true",
+                     help="save even when the distance or error checks fail")
 _args = _parser.parse_args()
 
 # ====================================
@@ -180,11 +188,27 @@ try:
             raise SystemExit
 
         if key == 32 and pose_ok:
-            R, _ = cv2.Rodrigues(rvec)
-            T_cam_board = np.eye(4)
-            T_cam_board[:3, :3] = R
-            T_cam_board[:3, 3] = tvec.flatten()
-            print("Dela poza fikseta.")
+            # Viens kadrs ir trokšņains: vidējo pozu no nākamajiem kadriem, tikai ar labu
+            # reprojekcijas kļūdu (tas pats, ko dara board_demo_calibration.py).
+            print(f"Vacu {_args.frames} kadrus, nekustini deli un kameru...")
+            poses, tried = [], 0
+            while tried < _args.frames:
+                frames = pipeline.wait_for_frames()
+                color_frame = frames.get_color_frame()
+                if not color_frame:
+                    continue
+                tried += 1
+                gray = cv2.cvtColor(np.asanyarray(color_frame.get_data()), cv2.COLOR_BGR2GRAY)
+                pose = detect_pose(gray, camera_matrix, dist_coeffs, board, charuco_detector)
+                if pose is not None and pose.rms_px <= MAX_RMS_PX:
+                    poses.append(pose.T_cam_board)
+            if len(poses) < MIN_FRAMES:
+                print(f"Tikai {len(poses)} no {tried} kadriem ar kludu <= {MAX_RMS_PX} px. "
+                      f"Uzlabo apgaismojumu vai pieliec kameru tuvak, un spied SPACE velreiz.")
+                continue
+            T_cam_board, spread_mm, spread_deg = combine_poses(poses)
+            print(f"Dela poza fikseta: {len(poses)} no {tried} kadriem, izkliede "
+                  f"{spread_mm:.1f} mm / {spread_deg:.2f} grad.")
             print("Dela origin kameras rami (m):", T_cam_board[:3, 3])
             break
 
@@ -210,6 +234,8 @@ print("2. SOLIS: robota koordinatas")
 print("Ar jogging aizved TCP smaili PRECIZI uz katru punktu")
 print("(sarkanie punkti ekrana: P0, P1, P2).")
 print("Nolasi robota poziciju (mm, Base frame) un ievadi seit.")
+print("SVARIGI: FlexPendant jabut Tool = toolRG6 (pirkstu gali, [0,0,253]) un")
+print("koordinatu sistemai Base (vai World ar wobj0). Ar tool0 punkti bus 253 mm nost.")
 print("=" * 50)
 
 ref_points_robot = np.zeros((3, 3))
@@ -230,8 +256,10 @@ d02 = np.linalg.norm(ref_points_robot[2] - ref_points_robot[0]) * 1000
 print()
 print(f"Parbaude: P0-P1 attalums = {d01:.1f} mm (jabut ~{EXPECTED_D01_MM:.0f})")
 print(f"          P0-P2 attalums = {d02:.1f} mm (jabut ~{EXPECTED_D02_MM:.0f})")
-if abs(d01 - EXPECTED_D01_MM) > 15 or abs(d02 - EXPECTED_D02_MM) > 15:
-    print("BRIDINAJUMS: attalumi neatbilst delim - punkti var but sajaukti!")
+problems = []
+if abs(d01 - EXPECTED_D01_MM) > MAX_DISTANCE_ERROR_MM or abs(d02 - EXPECTED_D02_MM) > MAX_DISTANCE_ERROR_MM:
+    problems.append("attalumi neatbilst delim - punkti var but sajaukti vai nepareizs --board")
+    print(f"BRIDINAJUMS: {problems[-1]}!")
 
 # ====================================
 # 3. SOLIS: T_base_cam aprēķins
@@ -254,20 +282,26 @@ for i, e in enumerate(errors):
     print(f"  P{i}: {e:.2f} mm")
 print(f"Videja kluda: {errors.mean():.2f} mm")
 
-if errors.mean() > 5.0:
+if errors.mean() > MAX_MEAN_ERROR_MM:
+    problems.append(f"videja kluda {errors.mean():.1f} mm > {MAX_MEAN_ERROR_MM:.0f} mm")
     print()
-    print("BRIDINAJUMS: kluda > 5 mm. Iespejamie iemesli:")
-    print("  - TCP nebija precizi uz stura")
+    print(f"BRIDINAJUMS: kluda > {MAX_MEAN_ERROR_MM:.0f} mm. Iespejamie iemesli:")
+    print("  - TCP nebija precizi uz stura (vai nebija toolRG6)")
     print("  - delis pakustejas starp 1. un 2. soli")
-    print("  - nepareizi dela parametri (SQUARE_LENGTH?)")
+    print("  - nepareizi dela parametri (--board?)")
     print("Iesaku atkartot.")
+
+if problems and not _args.force:
+    print()
+    print("NESAGLABATS: " + "; ".join(problems) + ".")
+    print("Atkarto merijumus, vai ar --force saglaba tik un ta.")
+    raise SystemExit(1)
 
 Path(OUTPUT_FILE).parent.mkdir(parents=True, exist_ok=True)
 np.save(OUTPUT_FILE, T_base_cam)
 print()
 print(f"Saglabats: {OUTPUT_FILE}")
 print()
-print("Lietosana yolo_robot.py:")
-print("  T = np.load('T_base_cam.npy')")
-print("  p_cam = np.array([X, Y, Z, 1.0])   # metros!")
-print("  p_robot = (T @ p_cam)[:3] * 1000   # -> mm robotam")
+print("Lietosana:")
+print(f"  python robot/robot_trash_picker.py --host 192.168.125.1 --calibration {OUTPUT_FILE}")
+print("  (T ir METROS: p_robot_mm = (T @ [X_m, Y_m, Z_m, 1])[:3] * 1000)")

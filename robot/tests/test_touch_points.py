@@ -21,11 +21,6 @@ def test_each_point_is_visited_down_to_z_and_the_robot_ends_at_home(client, rapi
     assert all("reached" in line for line in results)
 
 
-def test_a_point_outside_the_pick_reach_is_still_tried_but_flagged(client, rapid):
-    results = touch_points.touch(client, [(900.0, 0.0)], 0.0, wait=lambda prompt: None)
-    assert "outside the 300..800 mm" in results[0]
-
-
 @pytest.mark.parametrize("argv, message", [
     (["--points", "500,0", "--host", "192.168.125.1"], "only for the simulator"),
     (["--points", "500,0", "--z", "-5"], "from 0"),

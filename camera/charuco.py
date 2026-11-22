@@ -13,10 +13,13 @@ Presets
     a2       the lab board: 6 x 7 squares of 60 mm, 43 mm markers. Confirmed with find_board.py.
     home40   home board with 40 mm squares: 6 x 5, DICT_4X4_50, ids 0-14. Grid confirmed with
              find_board.py on 2026-11-08 (15 markers, 20 corners). With 5 rows, legacy and new
-             patterns are the same board. The 30 mm marker is still 0.75 x square, not measured.
+             patterns are the same board. Printed 0.8% large: 242 mm across 6 squares (ruler,
+             2026-11-20), so 40.33 mm squares and 30.25 mm markers.
     home50   home board with 50 mm squares: 5 x 4, DICT_4X4_50, ids 0-9, 37 mm markers (ruler).
              Confirmed with find_board.py on 2026-11-08 (10 markers, 12 corners). With 4 rows the
-             legacy flag matters, and only legacy=True matched.
+             legacy flag matters, and only legacy=True matched. Printed 3.2% large: 258 mm across
+             5 squares (ruler, 2026-11-22), so 51.6 mm squares; the RealSense depth to the board
+             agrees with that to 0.25%, and is 3.5% off with 50 mm.
 
 To confirm a board (or its marker size), with it in view run
 
@@ -55,8 +58,11 @@ class BoardSpec:
 
 BOARDS: dict[str, BoardSpec] = {
     "a2": BoardSpec(6, 7, 0.060, 0.043),
-    "home40": BoardSpec(6, 5, 0.040, 0.030),     # grid confirmed; marker = 0.75 x square, unmeasured
-    "home50": BoardSpec(5, 4, 0.050, 0.037),     # confirmed: grid by find_board.py, marker by ruler
+    # printed 0.8% large: 242 mm across 6 squares by ruler, not 240. The marker is scaled to match.
+    "home40": BoardSpec(6, 5, 0.242 / 6, 0.030 * 242 / 240),
+    # printed 3.2% large: 258 mm across 5 squares by ruler, not 250; the depth camera agrees to 0.25%.
+    # The 37 mm marker was measured on the print itself, so it stays.
+    "home50": BoardSpec(5, 4, 0.258 / 5, 0.037),
 }
 
 

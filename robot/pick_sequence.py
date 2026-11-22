@@ -4,6 +4,7 @@ Nothing here knows about cameras. A Target comes in with its position already in
 """
 from __future__ import annotations
 
+import math
 import sys
 from pathlib import Path
 
@@ -41,11 +42,18 @@ APPROACH_Z_MM = HOME_Z_MM
 # The margin is because Z_TABLE_MM is the table's surface, so a TCP sent exactly there is touching
 # it, and z is not that exact. Settled depth was measured at 9 mm (p95) at 0.75 m, which grows with
 # the square of the range to an estimated 30 mm at the rig's 1.4 m, before any calibration error.
-# The cost is that anything whose z reads under 100 mm, such as flat paper, is skipped. Lower this
-# once the real error has been measured, and check it against your correct grasp z.
-GRASP_Z_MARGIN_MM = 30.0
-GRASP_Z_MIN_MM = -100 # Z_TABLE_MM + GRASP_Z_MARGIN_MM
-GRASP_Z_MAX_MM = 1000 #APPROACH_Z_MM
+# The camera now hangs about 0.79 m over the floor, so 10 mm covers that noise. Anything whose top
+# reads under 10 mm above the floor is skipped. Raise this if the camera goes higher.
+GRASP_Z_MARGIN_MM = 10.0
+GRASP_Z_MIN_MM = Z_TABLE_MM + GRASP_Z_MARGIN_MM
+GRASP_Z_MAX_MM = APPROACH_Z_MM
+
+# Where the arm can grasp straight down without stretching out, as a distance from the base's z
+# axis. The GoFa reaches 950 mm, but near its limit the wrist misbehaves, and close to the base it
+# folds into itself. Targets outside are skipped, and the preview shades that part of the image red:
+# do not put objects there.
+REACH_MIN_MM = 300.0
+REACH_MAX_MM = 800.0
 
 # The line the RG6's fingers close along at rz = 0, which is pHome's orientation: degrees from the
 # base's +x, anticlockwise seen from above. 0 is along the base's x, read off the RobotStudio station.
@@ -84,16 +92,21 @@ def gripper_rz_deg(base_axis_deg: float | None) -> float | None:
     return (base_axis_deg + 90.0 - FINGER_CLOSE_AXIS_AT_RZ0_DEG + 90.0) % 180.0 - 90.0
 
 
+def in_reach(x_mm: float, y_mm: float) -> bool:
+    return REACH_MIN_MM <= math.hypot(x_mm, y_mm) <= REACH_MAX_MM
+
+
 def grasp_z_for(target: Target) -> float:
     """The z the TCP goes down to for `target`. One place, so the log and the viewer agree with the move."""
     perceived_z = target.xyz_base_mm[2]
     # #############################################################################################
-    # >>> PLACEHOLDER: THE CORRECT GRASP Z GOES HERE <<<
+    # >>> THE GRASP Z: STILL TO BE TUNED <<<
     # This is the z of the point the camera saw, moved into the base frame, which is the object's
     # top surface at its centroid. The TCP stops exactly there, so the fingertips reach the surface
-    # and do not straddle the object. Replace it with the height to grip at, for example by going
-    # below the surface by some depth, or a per-class height. Everything below uses grasp_z.
-    return -perceived_z
+    # and do not straddle the object. Going below the surface by some depth, or a per-class height,
+    # goes here. It used to be -perceived_z, which sent the TCP under the floor. GRASP_Z_MIN_MM
+    # still keeps whatever this returns above the floor.
+    return perceived_z
     # #############################################################################################
 
 
@@ -119,6 +132,11 @@ def pick_and_place(robot: ArtCameraClient, target: Target) -> bool:
     drop = DROP_LOCATIONS_MM.get(cls)
     if drop is None:
         print(f"  SKIPPED: no drop location for class {cls} ({target.name}) in DROP_LOCATIONS_MM.")
+        return False
+    if not in_reach(x, y):
+        print(f"  SKIPPED: ({x:.1f}, {y:.1f}) is {math.hypot(x, y):.0f} mm from the base, outside "
+              f"{REACH_MIN_MM:.0f}..{REACH_MAX_MM:.0f} mm where the arm can reach down, so the "
+              f"robot did not move. {EXTRINSICS_HINT}")
         return False
     if not GRASP_Z_MIN_MM <= grasp_z <= GRASP_Z_MAX_MM:
         print(f"  SKIPPED: z = {grasp_z:.1f} mm is outside {GRASP_Z_MIN_MM:.0f}.."

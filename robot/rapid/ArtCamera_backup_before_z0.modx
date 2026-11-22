@@ -1,0 +1,299 @@
+MODULE ArtCamera
+
+    ! =====================================================================
+    ! ArtCamera.mod  -  Project6 / CRB 15000-5 GoFa (CRB15000_5_95)
+    !
+    ! Socket serveris redzes vaditai pick-and-place sistemai.
+    ! Sanem "class,x,y,z" (mm, robota bazes sistema) no Python puses
+    ! (D435i + YOLO), parbauda punktu, izpilda kustibu un atbild:
+    !
+    !   PARSE_ERROR - zinojumu nevar noparset ka class,x,y,z
+    !   REJECTED    - punkts arpus drosas darba zonas
+    !   DONE        - kustiba pabeigta
+    !
+    ! Virtualais tests (RobotStudio):   HOST := "127.0.0.1"
+    ! Realais kontrolieris (serviss):   HOST := "192.168.125.1"
+    ! Realais kontrolieris (LAN):       HOST := "192.168.1.131"
+    ! =====================================================================
+
+    ! ------------------------- Konfiguracija -----------------------------
+
+    CONST string HOST := "127.0.0.1";
+    CONST num PORT := 5002;
+
+    ! Galda virsmas augstums robota bazes sistema (mm) un drosais atstatums
+    CONST num Z_TABLE := 70;
+    CONST num Z_SAFE  := 100;   ! piebrauksanas augstums virs galda
+
+    ! Drosas darba zonas robezas robota bazes sistema (mm)
+    CONST num X_MIN := -1000;
+    CONST num X_MAX := 1000;
+    CONST num Y_MIN := -1000;
+    CONST num Y_MAX := 1000;
+    
+    
+        CONST num GRIP_TIMEOUT := 3;
+    VAR bool bGripTimeout;
+
+    ! Kustibas atrums
+    CONST speeddata vTarget := v100;
+
+    ! ---------------------------------------------------------------------
+    ! RIKS: stacija tev ir toolRG6. Ja pec sinhronizacijas (Synchronize ->
+    ! Synchronize to RAPID) kontroliera RAPID dala jau eksiste tooldata ar
+    ! nosaukumu toolRG6, tad:
+    !   1) IZDZES so tGripper deklaraciju,
+    !   2) visur zemak aizstaj tGripper ar toolRG6.
+    ! Ja ne - saja aizstajejvertiba TCP ir nobidits 150 mm pa Z (aptuvens
+    ! RG6 garums); socket testam precizitate nav svariga.
+    ! ---------------------------------------------------------------------
+    !PERS tooldata tGripper := [TRUE,[[0,0,150],[1,0,0,0]],[1.2,[0,0,60],[1,0,0,0],0,0,0]];
+
+    ! Majas pozicija - IEMACI reali vai nolasi RobotStudio.
+    ! Orientacija [0,0,1,0] = riks verts taisni uz leju.
+    CONST robtarget pHome := [[800,0,400],[0,0,1,0],[0,0,0,0],[9E+09,9E+09,9E+09,9E+09,9E+09,9E+09]];
+
+    ! Nolikanas tvertnes pa klasem - PRECIZET pec fiziskas sunas izkartojuma.
+    ! Klases pec tava YOLO modela: cup / jar / bottle / can.
+    CONST robtarget pDrop0 := [[300,-300,250],[0,0,1,0],[0,0,0,0],[9E9,9E9,9E9,9E9,9E9,9E9]];
+    CONST robtarget pDrop1 := [[400,-300,250],[0,0,1,0],[0,0,0,0],[9E9,9E9,9E9,9E9,9E9,9E9]];
+    CONST robtarget pDrop2 := [[500,-300,250],[0,0,1,0],[0,0,0,0],[9E9,9E9,9E9,9E9,9E9,9E9]];
+    CONST robtarget pDrop3 := [[600,-300,250],[0,0,1,0],[0,0,0,0],[9E9,9E9,9E9,9E9,9E9,9E9]];
+
+    ! ------------------------- Stavoklis ---------------------------------
+
+    VAR socketdev serverSocket;
+    VAR socketdev clientSocket;
+
+    VAR num nClass;
+    VAR num nX;
+    VAR num nY;
+    VAR num nZ;
+    VAR num nRz;
+    PERS tooldata toolRG6:=[TRUE,[[0,0,253],[1,0,0,0]],[1.25,[0,0,80],[1,0,0,0],0,0,0]];
+    PERS tooldata tGripper:=[TRUE,[[0,0,150],[1,0,0,0]],[1.2,[0,0,60],[1,0,0,0],0,0,0]];
+
+    ! =====================================================================
+    ! main: piesaista portu vienreiz, tad cikla pienem klientus.
+    ! Katrs sanemtais zinojums tiek parsets, validets un izpildits.
+    ! =====================================================================
+    PROC main()
+        VAR string sMsg;
+        VAR bool bParseOk;
+
+        SocketCreate serverSocket;
+        SocketBind serverSocket, HOST, PORT;
+        SocketListen serverSocket;
+        TPWrite "Server listening on " + HOST + ":" + NumToStr(PORT,0);
+
+        WHILE TRUE DO
+            SocketAccept serverSocket, clientSocket \Time:=WAIT_MAX;
+            TPWrite "Client connected";
+
+            WHILE TRUE DO
+                SocketReceive clientSocket \Str:=sMsg \Time:=WAIT_MAX;
+                TPWrite "RX: " + sMsg;
+
+                bParseOk := ParseMessage(sMsg);
+
+                IF NOT bParseOk THEN
+                    SocketSend clientSocket \Str:="PARSE_ERROR";
+                ELSEIF nClass >=0 AND (NOT InWorkspace(nX, nY, nZ) OR Abs(nRz) > 180) THEN
+                    SocketSend clientSocket \Str:="REJECTED";
+                ELSE
+                    !MoveToPoint [nX, nY, Z_TABLE + Z_SAFE];
+                    IF nClass = -1 THEN
+                        GoHome;
+                    ELSEIF nClass = -2 THEN
+                        GripOpen;
+                    ELSEIF nClass =  -3 THEN
+                        GripClose;
+                    ELSEIF nClass >=0 THEN
+                        MoveToPoint [nX, nY, nZ];
+                    ENDIF
+                    SocketSend clientSocket \Str:="DONE";
+                ENDIF
+            ENDWHILE
+        ENDWHILE
+
+    ERROR
+        IF ERRNO = ERR_SOCK_CLOSED THEN
+            TPWrite "Client disconnected";
+            SocketClose clientSocket;
+            SocketClose serverSocket;
+            RETURN;
+        ENDIF
+        ! Jebkura cita kluda: aizver socketus un aptur
+        SocketClose clientSocket;
+        SocketClose serverSocket;
+        RAISE;
+    UNDO
+        ! Runs automatically when the PP is moved out of main.
+        ! This is what prevents ADDR_INUSE on the next start.
+        SocketClose clientSocket;
+        SocketClose serverSocket;
+    ENDPROC
+
+    
+        ! =====================================================================
+    ! Satverejs (viens signals: doGripClose).
+    !
+    ! Ar isto atgriezenisko saiti (SC izejas doClosed / doOpen savienotas
+    ! ar diGripClosed / diGripOpen Station Logic) WaitDI gaida, lidz
+    ! pirksti tiesam ir sasnieguši pozīciju. Tapec WaitTime var but iss -
+    ! tas ir tikai nostabilizesanas laiks.
+    !
+    ! SVARIGI: I/O loga piespiedu vertibas (Set 1) diGripClosed un
+    ! diGripOpen ir jaatcel (Set 0), citadi WaitDI atgriezas uzreiz un
+    ! atgriezeniska saite netiek parbaudita.
+    ! =====================================================================
+       ! =====================================================================
+    ! Satverejs (viens signals: doGripClose).
+    !
+    ! Virtualais kontrolieris: doGripClose -> SC_RG6.diClose (Station
+    ! Logic). Smart Component NOT varti pargriez signalu, tapec 0 palaiz
+    ! MoveOpen, bet 1 - MoveClose.
+    !
+    ! diGripClosed / diGripOpen: vai nu piespiedu vertiba 1 (I/O logs
+    ! -> Set 1), vai isti savienoti no SC izejam doClosed / doOpen.
+    ! Ja atgriezeniska saite nepienak, WaitDI gaida GRIP_TIMEOUT sekundes
+    ! un turpina ar bridinajumu - programma neiestrego.
+    !
+    ! Realais robots: tas pats signals, piesaistits OnRobot Compute Box
+    ! digitalajai I/O. RAPID kods nemainas.
+    ! =====================================================================
+    PROC GripClose()
+        SetDO doGripClose, 1;
+        WaitDI diGripClosed, 1 \MaxTime:=GRIP_TIMEOUT \TimeFlag:=bGripTimeout;
+        IF bGripTimeout TPWrite "Gripper: close timeout";
+        WaitTime 0.2;
+    ENDPROC
+
+    PROC GripOpen()
+        SetDO doGripClose, 0;
+        WaitDI diGripOpen, 1 \MaxTime:=GRIP_TIMEOUT \TimeFlag:=bGripTimeout;
+        IF bGripTimeout TPWrite "Gripper: open timeout";
+        WaitTime 0.2;
+    ENDPROC
+    ! =====================================================================
+    ! ParseMessage: "class,x,y,z" -> nClass, nX, nY, nZ
+    ! Atgriez FALSE pie jebkuras formata kludas.
+    ! =====================================================================
+    FUNC bool ParseMessage(string sMsg)
+        VAR num i1;
+        VAR num i2;
+        VAR num i3;
+        VAR num i4;
+        VAR string sPart;
+        VAR bool bOk;
+
+        ! Trisu komatu pozicijas
+        i1 := StrFind(sMsg, 1, ",");
+        IF i1 > StrLen(sMsg) RETURN FALSE;
+        i2 := StrFind(sMsg, i1 + 1, ",");
+        IF i2 > StrLen(sMsg) RETURN FALSE;
+        i3 := StrFind(sMsg, i2 + 1, ",");
+        IF i3 > StrLen(sMsg) RETURN FALSE;
+        i4 := StrFind(sMsg, i3 + 1, ",");
+        IF i4 = StrLen(sMsg) RETURN FALSE;
+
+        ! class
+        sPart := StrPart(sMsg, 1, i1 - 1);
+        bOk := StrToVal(sPart, nClass);
+        IF NOT bOk RETURN FALSE;
+
+        ! x
+        sPart := StrPart(sMsg, i1 + 1, i2 - i1 - 1);
+        bOk := StrToVal(sPart, nX);
+        IF NOT bOk RETURN FALSE;
+
+        ! y
+        sPart := StrPart(sMsg, i2 + 1, i3 - i2 - 1);
+        bOk := StrToVal(sPart, nY);
+        IF NOT bOk RETURN FALSE;
+
+        ! z (atlikusi virknes dala)
+        sPart := StrPart(sMsg, i3 + 1, i4 - i3 - 1);
+        bOk := StrToVal(sPart, nZ);
+        IF NOT bOk RETURN FALSE;
+        
+        ! rz gradi ap bazes Z asi (bez ta 0)
+        nRz := 0;
+        IF i4 < StrLen(sMsg) THEN
+            sPart := StrPart(sMsg, i4 + 1, StrLen(sMsg) - i4);
+            bOk := StrToVal(sPart, nRz);
+            IF NOT bOk RETURN FALSE;
+        ENDIF
+
+        RETURN TRUE;
+    ENDFUNC
+
+    ! =====================================================================
+    ! InWorkspace: TRUE, ja punkts ir drosajas robezas.
+    ! Kameras Z tiek pienemts, bet robots vienmer brauc uz
+    ! Z_TABLE + Z_SAFE, nekad uz neapstradatu kameras Z.
+    ! =====================================================================
+    FUNC bool InWorkspace(num x, num y, num z)
+        IF x < X_MIN OR x > X_MAX RETURN FALSE;
+        IF y < Y_MIN OR y > Y_MAX RETURN FALSE;
+        !!TODO need to ensure that Z is not under the table or outside robot's reach
+        RETURN TRUE;
+    ENDFUNC
+
+    ! =====================================================================
+    ! GoHome: kustiba uz iemacito majas pozu.
+    ! =====================================================================
+    PROC GoHome()
+        MoveJ pHome, vTarget, fine, toolRG6 \WObj := wobj0;
+    ENDPROC
+
+    ! =====================================================================
+    ! MoveToPoint: majas -> ievades punkts -> majas.
+    ! =====================================================================
+    PROC MoveToPoint(pos pInput)
+        VAR robtarget pTarget;
+
+        ! Merkis tiek buvets no majas pozas, lai riks parmanto orientaciju
+        ! un rokas konfiguraciju; tiek aizstata tikai pozicija.
+        pTarget := pHome;
+        pTarget.trans := pInput;
+        pTarget.rot := OrientZYX(nRz, 0, 0) * pHome.rot;
+
+        ! Uzspiez saglabato rokas konfiguraciju linearajam kustibam, lai
+        ! robots klusam nesasniedz to pasu Dekarta punktu cita (piem.,
+        ! elkona-apgriezta) poza. Ja deriga merka viet sanem "unreachable",
+        ! atslabini ar ConfL \Off - un parbaudi kustibu velreiz.
+        ConfL \Off;
+        SingArea \Off;
+
+        ! 1. Majas. Nem vera - ta ir kustiba no jebkuras vietas, kur robots
+        !    passlaik stav: parliecinies, ka cels no starta pozicijas lidz
+        !    majam ir brivs, vai pirms starta pievirzi robotu majam.
+        !GoHome;
+
+        ! 2. Ievades punkts. "fine" nozime, ka si rinda nepabeidzas, kamer
+        !    TCP faktiski nav pTarget pozicija.
+        MoveL pTarget, vTarget, fine, toolRG6 \WObj := wobj0;
+
+        ! -----------------------------------------------------------------
+        ! Seit nak satvereja darbinasana.
+        !
+        ! Saja bridi TCP stav uz vietas ievades punkta, tapec riku drosi
+        ! var darbinat. Tipisks raksts:
+        !
+        !     SetDO doGripperClose, 1;                  ! komanda
+        !     WaitDI diGripperClosed, 1 \MaxTime := 2;  ! atgriezeniska saite
+        !     WaitTime 0.2;                             ! nostabilizesanas
+        !
+        ! OnRobot RG6 gadijuma signalu nosaukumi bus atkarigi no Compute
+        ! Box konfiguracijas - preciziet, kad satverejs bus pieslegts.
+        ! Ja rikam vajag vertikalu piebrauksanu/atbrauksanu, pievieno
+        ! MoveL uz nobiditu merki ar Offs(pTarget, 0, 0, 100) pirms un
+        ! pec darbinasanas.
+        ! -----------------------------------------------------------------
+
+        ! 3. Atpakal majas.
+        !GoHome;
+    ENDPROC
+
+ENDMODULE

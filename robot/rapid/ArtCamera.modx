@@ -22,7 +22,7 @@ MODULE ArtCamera
     CONST num PORT := 5002;
 
     ! Galda virsmas augstums robota bazes sistema (mm) un drosais atstatums
-    CONST num Z_TABLE := 70;
+    CONST num Z_TABLE := 0;
     CONST num Z_SAFE  := 100;   ! piebrauksanas augstums virs galda
 
     ! Drosas darba zonas robezas robota bazes sistema (mm)

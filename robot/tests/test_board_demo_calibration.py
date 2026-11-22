@@ -100,3 +100,76 @@ def test_main_writes_the_file_from_the_measured_pose(tmp_path, monkeypatch):
 def test_a_missing_bag_is_refused(tmp_path):
     with pytest.raises(SystemExit, match="no such rosbag"):
         demo.main(["--rosbag", str(tmp_path / "missing.db3"), "--board", "home50"])
+
+
+# =============================================================================
+# the board placed by three tape-measured corners
+# =============================================================================
+def corners_on_floor(T_base_board) -> list[tuple[float, float]]:
+    """P0, P1, P2 where a board at T_base_board has them, in mm: what the tape would read."""
+    from camera.charuco import reference_points
+    points = (T_base_board[:3, :3] @ reference_points(SPEC).T).T + T_base_board[:3, 3]
+    return [(float(x), float(y)) for x, y in points[:, :2] * 1000.0]
+
+
+@pytest.mark.parametrize("at, yaw", [((527.0, -67.0), -90.0), ((450.0, 100.0), 0.0),
+                                     ((300.0, 250.0), 37.0), ((600.0, -200.0), 180.0)])
+def test_three_measured_corners_put_the_board_back_where_it_was(at, yaw):
+    T = demo.board_in_base(SPEC, at, yaw)
+    fit = demo.board_from_points(SPEC, corners_on_floor(T))
+    assert fit.T_base_board == pytest.approx(T, abs=1e-9)
+    assert max(fit.errors_mm) == pytest.approx(0.0, abs=1e-6)
+    assert fit.corner_deg == pytest.approx(90.0)
+    assert fit.distances_mm == pytest.approx(fit.expected_mm)
+
+
+def test_tape_error_of_a_few_mm_is_accepted_and_reported():
+    T = demo.board_in_base(SPEC, (527.0, -67.0), -90.0)
+    (x0, y0), p1, (x2, y2) = corners_on_floor(T)
+    fit = demo.board_from_points(SPEC, [(x0 + 3.0, y0), p1, (x2, y2 - 2.0)])
+    assert 0.5 < max(fit.errors_mm) < 4.0
+    centre = fit.T_base_board @ np.append(SPEC.centre_m, 1.0)
+    assert np.hypot(*(centre[:2] * 1000 - (527.0, -67.0))) < 3.0
+
+
+def test_swapped_corners_or_a_flipped_y_line_are_refused():
+    p0, p1, p2 = corners_on_floor(demo.board_in_base(SPEC, (500.0, 0.0), 0.0))
+    with pytest.raises(SystemExit, match="mirrored"):
+        demo.board_from_points(SPEC, [p0, p2, p1])
+    with pytest.raises(SystemExit, match="mirrored"):
+        demo.board_from_points(SPEC, [(x, -y) for x, y in (p0, p1, p2)])
+
+
+def test_points_that_are_not_the_board_are_refused():
+    p0, p1, p2 = corners_on_floor(demo.board_in_base(SPEC, (500.0, 0.0), 0.0))
+    with pytest.raises(SystemExit, match="do not fit the board"):
+        demo.board_from_points(SPEC, [p0, (p1[0] + 40.0, p1[1]), p2])
+
+
+def test_main_with_points_writes_the_measured_placement(tmp_path, monkeypatch, capsys):
+    bag = tmp_path / "20261120_120000_board_only.db3"
+    bag.write_bytes(b"")
+    monkeypatch.setattr(demo, "measure_bag", lambda bag, spec, step: measured())
+    T_board = demo.board_in_base(SPEC, (527.0, -67.0), -90.0)
+    points = [f"{x:.2f},{y:.2f}" for x, y in corners_on_floor(T_board)]
+    out = tmp_path / "home.txt"
+    expected = demo.compose(T_board, cam_board())
+    camera = expected[:3, 3] * 1000
+    assert demo.main(["--rosbag", str(bag), "--board", "home40", "--points", *points,
+                      "--camera-at", f"{camera[0]:.0f},{camera[1]:.0f},{camera[2] + 30:.0f}",
+                      "--output", str(out)]) == 0
+    assert load_T_base_cam(out) == pytest.approx(expected, abs=1e-4)
+    assert is_synthetic(out) and "Measured with a tape" in out.read_text(encoding="utf-8")
+    printed = capsys.readouterr().out
+    assert "off by" in printed and "(30 mm)" in printed
+
+
+@pytest.mark.parametrize("extra, message", [
+    (["--points", "1,1", "2,2", "3,3", "--board-at", "450,100"], "mean nothing with it"),
+    (["--points", "1,1", "2,2", "3,3", "--board-yaw", "90"], "mean nothing with it"),
+    (["--camera-at", "1,2,3"], "needs --points"),
+])
+def test_flags_that_contradict_the_points_are_refused(tmp_path, extra, message, capsys):
+    with pytest.raises(SystemExit):
+        demo.main(["--rosbag", str(tmp_path / "x.db3"), "--board", "home40", *extra])
+    assert message in capsys.readouterr().err

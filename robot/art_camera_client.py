@@ -47,7 +47,7 @@ DEFAULT_PORT = 5002
 
 X_MIN_MM, X_MAX_MM = -1000.0, 1000.0
 Y_MIN_MM, Y_MAX_MM = -1000.0, 1000.0
-Z_TABLE_MM = 70.0               # the table's surface in the base frame
+Z_TABLE_MM = 0.0                # the surface the objects lie on: the floor the robot base stands on
 Z_SAFE_MM = 100.0               # RAPID's approach clearance above the table
 HOME_Z_MM = 400.0               # the z of pHome. There is no message that reads the pose back.
 RZ_MAX_DEG = 180.0              # main's Abs(nRz) check

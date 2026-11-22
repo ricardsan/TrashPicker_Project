@@ -191,11 +191,36 @@ def test_every_rz_a_pick_can_send_is_one_the_controller_accepts(client, rapid):
 # =============================================================================
 # when the controller says no
 # =============================================================================
-def test_rejected_over_the_object_skips_it_and_goes_home(client, rapid, capsys):
-    assert pick_and_place(client, make_target(base=(100.0, 0.0, 120.0))) is False
-    assert rapid.received == ["0,100.0,0.0,400.0", HOME]
-    assert rapid.gripper is None
-    assert "SKIPPED" in capsys.readouterr().out
+def test_rejected_over_the_object_skips_it_and_goes_home(capsys):
+    server, client = session({0: "REJECTED"})
+    try:
+        assert pick_and_place(client, make_target(base=(400.0, 0.0, 120.0))) is False
+        assert server.received == ["0,400.0,0.0,400.0", HOME]
+        assert GRIP_CLOSE not in server.received
+        assert "SKIPPED" in capsys.readouterr().out
+    finally:
+        client.close()
+        server.__exit__(None, None, None)
+
+
+@pytest.mark.parametrize("x, y", [(0.0, 0.0), (250.0, 100.0), (820.0, 0.0), (600.0, -600.0)])
+def test_out_of_reach_does_not_move_the_robot_at_all(client, rapid, capsys, x, y):
+    """Too close to the base or too far out: the arm would fold or stretch, so nothing is sent."""
+    assert pick_and_place(client, make_target(base=(x, y, 120.0))) is False
+    assert rapid.received == []
+    out = capsys.readouterr().out
+    assert "SKIPPED" in out and "reach" in out and "extrinsics in use" in out
+
+
+@pytest.mark.parametrize("x, y", [(300.0, 0.0), (0.0, -800.0), (500.0, 400.0)])
+def test_the_edges_of_the_reach_are_allowed(client, x, y):
+    assert pick_and_place(client, make_target(base=(x, y, 120.0))) is True
+
+
+def test_the_grasp_z_is_the_top_of_the_object_and_stays_above_the_floor():
+    from robot.pick_sequence import grasp_z_for
+    assert grasp_z_for(make_target(base=(400.0, 0.0, 88.3))) == 88.3
+    assert GRASP_Z_MIN_MM > Z_TABLE_MM == 0.0
 
 
 def test_rejected_on_the_way_down_goes_home_without_gripping():

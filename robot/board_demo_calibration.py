@@ -15,6 +15,15 @@ Every object then lands where it really was *relative to the board*. Where the b
 the robot is chosen, not measured, so the file is SYNTHETIC: robot_trash_picker.py refuses it for any
 host but this machine. It is for RobotStudio. Record the board in its own clip and take it away for
 the object clips, which must be filmed without moving the camera.
+
+Measured instead of chosen: mark a cross on the floor where the robot base is, an x line and a y
+line from it, and measure with a tape where the board's corners P0, P1 and P2 are (see
+camera/charuco.py reference_points), in mm from the cross:
+
+    python robot/board_demo_calibration.py --rosbag <bag> --board home40 --points 520,40 520,-121 400,40 --camera-at 318,-141,796
+
+The board's place then comes from those three points. --camera-at, the camera's colour lens measured
+the same way, is only compared with where the board puts the camera.
 """
 from __future__ import annotations
 
@@ -30,7 +39,8 @@ import numpy as np
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from camera.charuco import BOARDS, BoardPose, BoardSpec, camera_matrix, detect_pose, make_board  # noqa: E402
+from camera.charuco import (BOARDS, BoardPose, BoardSpec, camera_matrix, detect_pose,  # noqa: E402
+                            make_board, reference_distances_mm, reference_points)
 from camera.rosbag_frames import default_export_dir, export_bag, read_meta  # noqa: E402
 from robot.art_camera_client import Z_TABLE_MM  # noqa: E402
 from robot.extrinsics import MM_PER_M, SYNTHETIC_MARKER, load_T_base_cam  # noqa: E402
@@ -61,6 +71,61 @@ def board_in_base(spec: BoardSpec, at_mm, yaw_deg: float, z_mm: float = Z_TABLE_
     T[:3, :3] = R
     T[:3, 3] = np.array([at_mm[0], at_mm[1], z_mm]) / MM_PER_M - R @ spec.centre_m
     return T
+
+
+# How far a tape-measured corner may sit from where the fitted board puts it. A tape read to a
+# couple of mm, from a cross a few mm wide, gives about this much; more is a misread or a wrong corner.
+MAX_POINT_ERROR_MM = 15.0
+
+
+@dataclass(frozen=True)
+class PointFit:
+    T_base_board: np.ndarray
+    errors_mm: tuple[float, float, float]       # each measured point to the fitted board's corner
+    distances_mm: tuple[float, float]           # |P0 P1|, |P0 P2| as measured
+    expected_mm: tuple[float, float]            # the same on the board
+    corner_deg: float                           # the angle at P0 as measured; 90 on the board
+    yaw_deg: float                              # the board's x axis from base +x
+
+
+def board_from_points(spec: BoardSpec, points_mm, z_mm: float = Z_TABLE_MM) -> PointFit:
+    """T_base_board from corners P0, P1, P2 measured on the floor, in mm from the cross.
+
+    The board lies flat and face up, so only its heading and place are fitted: a 2-D turn and shift of
+    the three corners, least squares, never a mirror image. Face up, P2 is clockwise from P1 seen from
+    above; measured the other way round, the y line on the floor or the order of the points is wrong.
+    """
+    measured = np.array([[float(x), float(y)] for x, y in points_mm])
+    if measured.shape != (3, 2) or not np.isfinite(measured).all():
+        raise SystemExit("--points needs three X,Y pairs: P0, P1 and P2")
+    flat = reference_points(spec)[:, :2] * MM_PER_M * np.array([1.0, -1.0])   # board y is base -y, turned
+    a, b = measured[1] - measured[0], measured[2] - measured[0]
+    if a[0] * b[1] - a[1] * b[0] >= 0.0:
+        raise SystemExit("the points are mirrored: seen from above, P2 must be clockwise from P1, as on "
+                         "a board lying face up. Either P1 and P2 are swapped, or the y line on the "
+                         "floor points the wrong way: +y is +x turned 90 degrees to the left.")
+    h = (flat - flat.mean(axis=0)).T @ (measured - measured.mean(axis=0))
+    yaw = math.atan2(h[0, 1] - h[1, 0], h[0, 0] + h[1, 1])
+    c, s = math.cos(yaw), math.sin(yaw)
+    turn = np.array([[c, -s], [s, c]])
+    shift = measured.mean(axis=0) - turn @ flat.mean(axis=0)
+    errors = np.linalg.norm(flat @ turn.T + shift - measured, axis=1)
+
+    T = np.eye(4)
+    T[:3, :3] = np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]]) @ np.diag([1.0, -1.0, -1.0])
+    T[:3, 3] = np.array([shift[0], shift[1], z_mm]) / MM_PER_M
+    cosine = float(a @ b / (np.linalg.norm(a) * np.linalg.norm(b)))
+    fit = PointFit(T, tuple(float(e) for e in errors),
+                   (float(np.linalg.norm(a)), float(np.linalg.norm(b))), reference_distances_mm(spec),
+                   math.degrees(math.acos(max(-1.0, min(1.0, cosine)))), math.degrees(yaw))
+    if max(fit.errors_mm) > MAX_POINT_ERROR_MM:
+        raise SystemExit(f"the three points do not fit the board: they sit "
+                         f"{', '.join(f'{e:.0f}' for e in fit.errors_mm)} mm from its corners, more than "
+                         f"{MAX_POINT_ERROR_MM:.0f}. Measured |P0 P1| = {fit.distances_mm[0]:.0f} and "
+                         f"|P0 P2| = {fit.distances_mm[1]:.0f} mm, where the board has "
+                         f"{fit.expected_mm[0]:.0f} and {fit.expected_mm[1]:.0f}, and the angle at P0 is "
+                         f"{fit.corner_deg:.0f} degrees, not 90. Measure again.")
+    return fit
 
 
 def compose(T_base_board: np.ndarray, T_cam_board: np.ndarray) -> np.ndarray:
@@ -143,14 +208,28 @@ def measure_bag(bag: Path, spec: BoardSpec, step: int = DEFAULT_STEP) -> Measure
                     max(pose.rms_px for pose in poses))
 
 
-def format_calibration(T: np.ndarray, measured: Measured, board_name: str, bag: Path, at_mm,
-                       yaw_deg: float) -> str:
+def format_calibration(T: np.ndarray, measured: Measured, board_name: str, bag: Path, at_mm=None,
+                       yaw_deg: float = 0.0, fit: PointFit | None = None) -> str:
     """The file. Its first word is the synthetic marker, which is what is_synthetic reads.
 
     No square brackets in the prose: parse_calibration_text takes any bracketed four numbers for a row.
     """
     height, tilt = height_and_tilt(measured.T_cam_board)
     rows = "\n ".join("[" + " ".join(f"{value: .6f}" for value in row) + "]" for row in T[:3])
+    if fit is None:
+        placement = (
+            f"Chosen, not measured:\n"
+            f"  the board's centre is at x = {at_mm[0]:.0f} mm, y = {at_mm[1]:.0f} mm, z = {Z_TABLE_MM:.0f} mm,\n"
+            f"  its x axis turned {yaw_deg:.1f} degrees from the base's +x.\n"
+            f"So positions relative to the board are real. Where the board is relative to the robot is not.\n")
+    else:
+        placement = (
+            f"Measured with a tape from a cross on the floor, which stands for the robot base:\n"
+            f"  corners P0 P1 P2 fit to {', '.join(f'{e:.1f}' for e in fit.errors_mm)} mm;\n"
+            f"  P0 to P1 {fit.distances_mm[0]:.1f} mm, on the board {fit.expected_mm[0]:.1f};\n"
+            f"  P0 to P2 {fit.distances_mm[1]:.1f} mm, on the board {fit.expected_mm[1]:.1f};\n"
+            f"  angle at P0 {fit.corner_deg:.1f} degrees; board x axis {fit.yaw_deg:.1f} degrees from base +x.\n"
+            f"No robot touched the board, so this is still not a robot calibration.\n")
     return (
         f"{SYNTHETIC_MARKER}. NOT A CALIBRATION. NEVER USE THIS ON THE REAL ROBOT.\n"
         f"\n"
@@ -161,10 +240,7 @@ def format_calibration(T: np.ndarray, measured: Measured, board_name: str, bag: 
         f"  the camera is {height:.1f} mm above the board, tilted {tilt:.2f} degrees from straight down.\n"
         f"  Frames agree to {measured.spread_mm:.2f} mm and {measured.spread_deg:.3f} degrees; worst\n"
         f"  reprojection {measured.worst_rms_px:.2f} px.\n"
-        f"Chosen, not measured:\n"
-        f"  the board's centre is at x = {at_mm[0]:.0f} mm, y = {at_mm[1]:.0f} mm, z = {Z_TABLE_MM:.0f} mm,\n"
-        f"  its x axis turned {yaw_deg:.1f} degrees from the base's +x.\n"
-        f"So positions relative to the board are real. Where the board is relative to the robot is not.\n"
+        f"{placement}"
         f"\n"
         f"T_base_cam:\n"
         f"[{rows}\n"
@@ -179,41 +255,75 @@ def _xy(text: str) -> tuple[float, float]:
     return x, y
 
 
+def _xyz(text: str) -> tuple[float, float, float]:
+    try:
+        x, y, z = (float(value) for value in text.split(","))
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"expected X,Y,Z in mm, for example 318,-141,796; got {text!r}") from None
+    return x, y, z
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Write a demo calibration from a ChArUco board clip.")
     parser.add_argument("--rosbag", required=True, metavar="BAG.db3",
                         help="a clip of the board alone, filmed from where the object clips were")
     parser.add_argument("--board", choices=sorted(BOARDS), required=True,
                         help="which board is in the clip: home40, home50 or a2")
-    parser.add_argument("--board-at", type=_xy, default=DEFAULT_BOARD_AT_MM, metavar="X,Y",
+    parser.add_argument("--board-at", type=_xy, default=None, metavar="X,Y",
                         help="the board's centre in the robot base frame, mm (default: 450,100)")
-    parser.add_argument("--board-yaw", type=float, default=0.0, metavar="DEG",
+    parser.add_argument("--board-yaw", type=float, default=None, metavar="DEG",
                         help="the board's x axis, degrees from the base's +x (default: 0)")
+    parser.add_argument("--points", type=_xy, nargs=3, default=None, metavar="X,Y",
+                        help="instead of --board-at and --board-yaw: corners P0 P1 P2 measured with a "
+                             "tape, mm from the cross on the floor")
+    parser.add_argument("--camera-at", type=_xyz, default=None, metavar="X,Y,Z",
+                        help="with --points: the camera's colour lens measured the same way, to compare")
     parser.add_argument("--step", type=int, default=DEFAULT_STEP,
                         help=f"use every Nth settled frame (default: {DEFAULT_STEP})")
     parser.add_argument("--output", default=DEFAULT_OUTPUT, metavar="FILE",
                         help=f"where to write it (default: robot/{DEFAULT_OUTPUT.name})")
     args = parser.parse_args(argv)
+    if args.points is not None and (args.board_at is not None or args.board_yaw is not None):
+        parser.error("--points places the board: --board-at and --board-yaw mean nothing with it")
+    if args.camera_at is not None and args.points is None:
+        parser.error("--camera-at is compared with a measured board, so it needs --points")
+    at_mm = DEFAULT_BOARD_AT_MM if args.board_at is None else args.board_at
+    yaw_deg = 0.0 if args.board_yaw is None else args.board_yaw
 
     bag = resolve_bag(args.rosbag)
     if not bag.exists():
         raise SystemExit(f"no such rosbag: {bag}")
     spec = BOARDS[args.board]
+    fit = None if args.points is None else board_from_points(spec, args.points)   # before the slow part
     measured = measure_bag(bag, spec, args.step)
-    T = compose(board_in_base(spec, args.board_at, args.board_yaw), measured.T_cam_board)
+    T_base_board = board_in_base(spec, at_mm, yaw_deg) if fit is None else fit.T_base_board
+    T = compose(T_base_board, measured.T_cam_board)
     if T[2, 2] >= 0.0:
         raise SystemExit("the camera would be looking up in the base frame: the board pose is not a "
                          "view from above")
 
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(format_calibration(T, measured, args.board, bag, args.board_at, args.board_yaw),
+    output.write_text(format_calibration(T, measured, args.board, bag, at_mm, yaw_deg, fit),
                       encoding="utf-8")
     load_T_base_cam(output)     # the same checks a robot run makes
     height, tilt = height_and_tilt(measured.T_cam_board)
     print(f"{bag.name}: board {args.board} on {measured.frames_used}/{measured.frames_tried} frames, "
           f"camera {height:.1f} mm above it, tilt {tilt:.2f} deg")
     print(f"wrote {output}\n{T}")
+    if fit is not None:
+        print(f"the points fit the board to {', '.join(f'{e:.1f}' for e in fit.errors_mm)} mm: P0-P1 "
+              f"{fit.distances_mm[0]:.1f} mm (board {fit.expected_mm[0]:.1f}), P0-P2 "
+              f"{fit.distances_mm[1]:.1f} mm (board {fit.expected_mm[1]:.1f}), angle at P0 "
+              f"{fit.corner_deg:.1f} degrees (board 90)")
+    camera = T[:3, 3] * MM_PER_M
+    print(f"in RobotStudio, the camera goes at x = {camera[0]:.0f}, y = {camera[1]:.0f}, "
+          f"z = {camera[2]:.0f} mm")
+    if args.camera_at is not None:
+        off = camera - np.array(args.camera_at)
+        print(f"the tape put the camera at {args.camera_at[0]:.0f}, {args.camera_at[1]:.0f}, "
+              f"{args.camera_at[2]:.0f}: off by {off[0]:+.0f}, {off[1]:+.0f}, {off[2]:+.0f} mm "
+              f"({np.linalg.norm(off):.0f} mm). More than about 20 mm means a measurement is wrong.")
     return 0
 
 

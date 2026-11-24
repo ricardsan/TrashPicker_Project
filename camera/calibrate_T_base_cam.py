@@ -198,10 +198,12 @@ try:
                 if not color_frame:
                     continue
                 tried += 1
-                gray = cv2.cvtColor(np.asanyarray(color_frame.get_data()), cv2.COLOR_BGR2GRAY)
+                color = np.asanyarray(color_frame.get_data()).copy()
+                gray = cv2.cvtColor(color, cv2.COLOR_BGR2GRAY)
                 pose = detect_pose(gray, camera_matrix, dist_coeffs, board, charuco_detector)
                 if pose is not None and pose.rms_px <= MAX_RMS_PX:
                     poses.append(pose.T_cam_board)
+                    calibration_image = color      # pedejais labais kadrs: RobotStudio grida attelam
             if len(poses) < MIN_FRAMES:
                 print(f"Tikai {len(poses)} no {tried} kadriem ar kludu <= {MAX_RMS_PX} px. "
                       f"Uzlabo apgaismojumu vai pieliec kameru tuvak, un spied SPACE velreiz.")
@@ -301,6 +303,19 @@ Path(OUTPUT_FILE).parent.mkdir(parents=True, exist_ok=True)
 np.save(OUTPUT_FILE, T_base_cam)
 print()
 print(f"Saglabats: {OUTPUT_FILE}")
+
+# Kalibracijas kadrs uz gridas RobotStudio virsmai: rozā = kur T_base_cam liek dela punktus,
+# zaļš = kur TCP tos aizskara. Ja attels neizdodas, kalibracija tik un ta ir saglabata.
+try:
+    from robot.floor_overlay import write_floor_overlay
+    _marks = [(f"P{i}", p[0] * 1000, p[1] * 1000, (255, 0, 255)) for i, p in enumerate(check)]
+    _marks += [(f"P{i} TCP", p[0] * 1000, p[1] * 1000, (0, 255, 0))
+               for i, p in enumerate(ref_points_robot)]
+    _floor = write_floor_overlay(calibration_image, T_base_cam, intr, points=_marks,
+                                 label="calibration")
+    print(f"RobotStudio grida attels: {_floor}")
+except Exception as _failure:  # noqa: BLE001 - tikai attels
+    print(f"BRIDINAJUMS: RobotStudio grida attels netika izveidots: {_failure}")
 print()
 print("Lietosana:")
 print(f"  python robot/robot_trash_picker.py --host 192.168.125.1 --calibration {OUTPUT_FILE}")

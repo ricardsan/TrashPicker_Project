@@ -32,6 +32,7 @@ import math
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 
 import cv2
 import numpy as np
@@ -247,6 +248,41 @@ def format_calibration(T: np.ndarray, measured: Measured, board_name: str, bag: 
         f" [ 0 0 0 1]]\n")
 
 
+BOARD_POINT_BGR = (255, 0, 255)          # where the fitted board puts P0 P1 P2
+TAPE_POINT_BGR = (0, 255, 0)             # where the tape put them
+
+
+def show_in_station(bag: Path, spec: BoardSpec, T_base_cam: np.ndarray, T_base_board: np.ndarray,
+                    tape_points=None) -> None:
+    """The clip's last frame laid on the floor for RobotStudio, with P0 P1 P2 marked.
+
+    A picture that cannot be written costs a warning, never the calibration.
+    """
+    from robot.floor_overlay import write_floor_overlay      # it imports the pick code; only here
+
+    try:
+        export_dir = default_export_dir(bag, EXPORT_DIR)
+        meta = read_meta(export_dir)
+        image = cv2.imread(str(export_dir / meta["frames"][-1]["color"]))
+        if image is None:
+            raise OSError("the clip's last colour frame did not load")
+        intr = meta["color_intrinsics"]
+        intrinsics = SimpleNamespace(fx=intr["fx"], fy=intr["fy"], ppx=intr["ppx"], ppy=intr["ppy"],
+                                     coeffs=intr["coeffs"])
+        on_board = (T_base_board @ np.hstack([reference_points(spec), np.ones((3, 1))]).T).T
+        points = [(f"P{i}", p[0] * MM_PER_M, p[1] * MM_PER_M, BOARD_POINT_BGR)
+                  for i, p in enumerate(on_board)]
+        if tape_points is not None:
+            points += [(f"P{i} tape", x, y, TAPE_POINT_BGR) for i, (x, y) in enumerate(tape_points)]
+        floor = write_floor_overlay(image, T_base_cam, intrinsics, points=points,
+                                    label="calibration")
+    except (Exception, SystemExit) as failure:     # noqa: BLE001 - only a picture; read_meta exits
+        print(f"WARNING: no floor picture for RobotStudio: {failure}")
+        return
+    print(f"floor picture for RobotStudio: {floor}  (P0 P1 P2 in magenta where the board is, "
+          f"green where the tape put them)")
+
+
 def _xy(text: str) -> tuple[float, float]:
     try:
         x, y = (float(value) for value in text.split(","))
@@ -324,6 +360,7 @@ def main(argv=None) -> int:
         print(f"the tape put the camera at {args.camera_at[0]:.0f}, {args.camera_at[1]:.0f}, "
               f"{args.camera_at[2]:.0f}: off by {off[0]:+.0f}, {off[1]:+.0f}, {off[2]:+.0f} mm "
               f"({np.linalg.norm(off):.0f} mm). More than about 20 mm means a measurement is wrong.")
+    show_in_station(bag, spec, T, T_base_board, args.points)
     return 0
 
 

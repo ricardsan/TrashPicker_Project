@@ -24,6 +24,7 @@ The moving parts:
     extrinsics.py           the HARDCODED EXTRINSICS, and calibration.txt -> T_base_cam
     frame_selection.py      rosbag or camera, and which frame
     perception.py           mask -> centroid, orientation, z, class, base position
+    floor_overlay.py        on 'n', the frame laid on the floor for RobotStudio's surface
     pick_sequence.py        the motion sequence, the DUMMY DROP LOCATIONS, the grasp z PLACEHOLDER
     operator_keys.py        keys from the image window or the terminal
     align_to_recording.py   writes calibration_rosbag_demo.txt; not part of a run
@@ -45,6 +46,7 @@ from robot.art_camera_client import (DEFAULT_HOST, DEFAULT_PORT,  # noqa: E402
                                      ArtCameraClient, RobotError, run_mock)
 from robot.extrinsics import (HARDCODED_NAME, HARDCODED_T_BASE_CAM,  # noqa: E402
                               check_transform, is_synthetic, load_T_base_cam)
+from robot.floor_overlay import write_floor_overlay  # noqa: E402
 from robot.frame_selection import (open_recording, preview_until,  # noqa: E402
                                    resolve_frame_index, settle_frames, started)
 from robot.experiment import (DEFAULT_DIR as EXPERIMENTS_DIR, ExperimentLog,  # noqa: E402
@@ -117,6 +119,21 @@ def check_args(parser: argparse.ArgumentParser, args) -> None:
         parser.error("--ground-truth and --experiments-dir need --experiment NAME")
 
 
+def show_in_station(snapshot, T_base_cam) -> None:
+    """The detection frame laid on the floor, for the textured surface in RobotStudio.
+
+    A picture that cannot be written costs a warning, never the run.
+    """
+    try:
+        floor = write_floor_overlay(snapshot.annotated, T_base_cam, snapshot.intrinsics,
+                                    snapshot.targets)
+    except Exception as failure:                    # noqa: BLE001 - only a picture
+        print(f"WARNING: no floor picture for RobotStudio: {failure}")
+        return
+    print(f"floor picture for RobotStudio: {floor}  (reload it as the surface's texture; "
+          f"the red crosses are where the TCP is sent)")
+
+
 def run_pick_session(args) -> int:
     # Everything that can be wrong with the inputs is checked before the robot moves, so a bad
     # --frame, a missing checkpoint or an absent camera costs nothing but a message.
@@ -187,6 +204,7 @@ def run_pick_session(args) -> int:
             print("Nothing to pick. The robot is at home.")
             return 0
         print(format_targets(snapshot.targets))
+        show_in_station(snapshot, T_base_cam)
 
         log = None
         if args.experiment:

@@ -27,6 +27,13 @@ def pytest_configure(config):
         "markers", "slow: loads a real checkpoint; deselect with -m 'not slow'")
 
 
+@pytest.fixture(autouse=True)
+def floor_pictures_in_tmp(monkeypatch, tmp_path):
+    """A run writes the floor picture for RobotStudio; in a test it goes to tmp, not the repo."""
+    monkeypatch.setattr("robot.floor_overlay.LIVE_DIR", tmp_path / "robotstudio_live")
+    return tmp_path / "robotstudio_live"
+
+
 @pytest.fixture
 def rapid():
     """A running fake controller. Scripted variants are built in the test with FakeRapid(script=)."""

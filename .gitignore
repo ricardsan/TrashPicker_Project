@@ -17,3 +17,6 @@ weights_backup_original/
 rosbags/export/
 rosbags/home_2026-11/
 rosbags/old_2026-11/
+
+# floor pictures a run writes for the RobotStudio surface (robot/floor_overlay.py)
+robot/robotstudio/live/

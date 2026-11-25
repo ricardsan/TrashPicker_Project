@@ -20,3 +20,7 @@ rosbags/old_2026-11/
 
 # floor pictures a run writes for the RobotStudio surface (robot/floor_overlay.py)
 robot/robotstudio/live/
+
+# RobotStudio 2023 build of the station add-in (install2023.ps1 rebuilds it)
+robot/rapid/TrashPickerStation/rs2023/bin/
+robot/rapid/TrashPickerStation/rs2023/obj/

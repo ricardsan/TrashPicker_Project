@@ -23,7 +23,6 @@ using System.Globalization;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
-using System.Buffers.Binary;
 using System.Runtime.ExceptionServices;
 using System.Text;
 using System.Text.Json;
@@ -142,8 +141,59 @@ namespace TrashPickerStation
                 Post($"TrashPicker station: {failure.Message}", LogMessageSeverity.Error);
                 reply = new Dictionary<string, object> { ["ok"] = false, ["error"] = failure.Message };
             }
-            byte[] bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(reply) + "\n");
+            byte[] bytes = Encoding.UTF8.GetBytes(ToJson(reply) + "\n");
             stream.Write(bytes, 0, bytes.Length);
+        }
+
+        // The reply is one flat object of strings, numbers, booleans and nulls, written by hand:
+        // JsonSerializer.Serialize threw on RobotStudio 2023 (.NET Framework, with the
+        // System.Text.Json it ships), after the request had been carried out, so Python saw the
+        // connection close without an answer. Parsing with JsonDocument works on both.
+        static string ToJson(Dictionary<string, object> values)
+        {
+            var json = new StringBuilder("{");
+            bool first = true;
+            foreach (KeyValuePair<string, object> pair in values)
+            {
+                if (!first)
+                    json.Append(", ");
+                first = false;
+                json.Append(JsonString(pair.Key)).Append(": ");
+                switch (pair.Value)
+                {
+                    case null: json.Append("null"); break;
+                    case bool flag: json.Append(flag ? "true" : "false"); break;
+                    case string text: json.Append(JsonString(text)); break;
+                    case double number: json.Append(number.ToString("R", CultureInfo.InvariantCulture)); break;
+                    case float number: json.Append(number.ToString("R", CultureInfo.InvariantCulture)); break;
+                    case IFormattable number: json.Append(number.ToString(null, CultureInfo.InvariantCulture)); break;
+                    default: json.Append(JsonString(pair.Value.ToString())); break;
+                }
+            }
+            return json.Append('}').ToString();
+        }
+
+        static string JsonString(string text)
+        {
+            var json = new StringBuilder("\"");
+            foreach (char c in text)
+            {
+                switch (c)
+                {
+                    case '"': json.Append("\\\""); break;
+                    case '\\': json.Append("\\\\"); break;
+                    case '\n': json.Append("\\n"); break;
+                    case '\r': json.Append("\\r"); break;
+                    case '\t': json.Append("\\t"); break;
+                    default:
+                        if (c < ' ')
+                            json.Append("\\u").Append(((int)c).ToString("x4", CultureInfo.InvariantCulture));
+                        else
+                            json.Append(c);
+                        break;
+                }
+            }
+            return json.Append('"').ToString();
         }
 
         // --- on the UI thread ----------------------------------------------------------------
@@ -183,7 +233,7 @@ namespace TrashPickerStation
             // Every time, not once: the part may have been moved or replaced since, and it is one
             // face. Moving it then still keeps the picture on the floor rectangle.
             int faces = MapTexture(part, floorX, floorY);
-            part.SetMaterial(new Material(new Texture(new MemoryStream(png))));
+            part.SetMaterial(new Material(MakeTexture(png)));
 
             PointCloud cloud = FindCloud(station);
             bool created = cloud == null;
@@ -315,6 +365,20 @@ namespace TrashPickerStation
             return clock.ElapsedMilliseconds;
         }
 
+        // RobotStudio 2026 makes a Texture from a stream; RobotStudio 2023 (.NET Framework, see
+        // rs2023\TrashPickerStation2023.csproj) only from a Bitmap. GDI+ needs a Bitmap's stream for
+        // as long as the Bitmap lives, so the 2023 path copies it into one that owns its pixels.
+        static Texture MakeTexture(byte[] png)
+        {
+#if NETFRAMEWORK
+            using (var stream = new MemoryStream(png))
+            using (var decoded = new Bitmap(stream))
+                return new Texture(new Bitmap(decoded));
+#else
+            return new Texture(new MemoryStream(png));
+#endif
+        }
+
         static Part FindPart(Station station, string name)
         {
             foreach (GraphicComponent component in station.FindGraphicComponentsByType(typeof(Part)))
@@ -368,7 +432,11 @@ namespace TrashPickerStation
             byte[] data = File.ReadAllBytes(path);
             if (data.Length < 8 || Encoding.ASCII.GetString(data, 0, 4) != CloudMagic)
                 throw new InvalidDataException($"{path} is not a station cloud");
-            long count = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(4));
+            // BitConverter reads the machine's byte order, which is little-endian on every PC
+            // RobotStudio runs on; it is in .NET Framework 4.8 (RobotStudio 2023) as well as .NET 10.
+            if (!BitConverter.IsLittleEndian)
+                throw new InvalidDataException("the station cloud is little-endian and this machine is not");
+            long count = BitConverter.ToUInt32(data, 4);
             if (data.Length != 8 + count * 15)
                 throw new InvalidDataException($"{path} holds {data.Length} bytes, not {count} points");
             int rgb = 8 + (int)count * 12;
@@ -377,9 +445,9 @@ namespace TrashPickerStation
             for (int i = 0; i < count; i++)
             {
                 int at = 8 + i * 12;
-                points[i] = new Vector3(BinaryPrimitives.ReadSingleLittleEndian(data.AsSpan(at)),
-                                        BinaryPrimitives.ReadSingleLittleEndian(data.AsSpan(at + 4)),
-                                        BinaryPrimitives.ReadSingleLittleEndian(data.AsSpan(at + 8)));
+                points[i] = new Vector3(BitConverter.ToSingle(data, at),
+                                        BitConverter.ToSingle(data, at + 4),
+                                        BitConverter.ToSingle(data, at + 8));
                 int c = rgb + i * 3;
                 colours[i] = Color.FromArgb(data[c], data[c + 1], data[c + 2]);
             }

@@ -1,0 +1,58 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The same add-in as ..\TrashPickerStation.csproj, built for RobotStudio 2023, which runs on
+       .NET Framework 4.8 (Bin\RobotStudio.exe.config). It compiles ..\StationAddin.cs unchanged.
+       Build and install with ..\install2023.ps1, or:
+       dotnet build -c Release -p:RobotStudioBin="<RobotStudio 2023>\Bin" -->
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>TrashPickerStation</AssemblyName>
+    <RootNamespace>TrashPickerStation</RootNamespace>
+    <Nullable>disable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <Version>1.0.0</Version>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <RobotStudioBin Condition="'$(RobotStudioBin)' == ''">C:\Program Files (x86)\ABB\RobotStudio 2023\Bin</RobotStudioBin>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!-- RobotStudio loads only the add-in's own DLL; the rest is already in its process. -->
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\StationAddin.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="PresentationFramework" />
+    <Reference Include="PresentationCore" />
+    <Reference Include="WindowsBase" />
+    <Reference Include="System.Net.Http" />
+    <!-- System.Text.Json is not part of .NET Framework; RobotStudio 2023 ships it in its Bin. -->
+    <Reference Include="System.Text.Json">
+      <HintPath>$(RobotStudioBin)\System.Text.Json.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="System.Memory">
+      <HintPath>$(RobotStudioBin)\System.Memory.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="ABB.Robotics.Math">
+      <HintPath>$(RobotStudioBin)\ABB.Robotics.Math.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="ABB.Robotics.RobotStudio">
+      <HintPath>$(RobotStudioBin)\ABB.Robotics.RobotStudio.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="ABB.Robotics.RobotStudio.Stations">
+      <HintPath>$(RobotStudioBin)\ABB.Robotics.RobotStudio.Stations.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="ABB.Robotics.RobotStudio.Stations.Forms">
+      <HintPath>$(RobotStudioBin)\ABB.Robotics.RobotStudio.Stations.Forms.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\TrashPickerStation.rsaddin" Link="TrashPickerStation.rsaddin" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

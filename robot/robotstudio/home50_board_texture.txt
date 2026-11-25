@@ -1,0 +1,15 @@
+home50_board_texture.png: the home50 ChArUco board, exact size, P0 P1 P2 marked in magenta.
+  2 px = 1 mm, 516 x 413 px = 258.0 x 206.4 mm (5 x 4 squares of 51.6 mm).
+  The texture is used as it is: no turning, unlike the camera floor pictures.
+
+Where it goes in the station: where the tape put the real board on 2026-11-22
+(P0 482,-0.5  P1 630,-0.5  P2 482,-110 from the cross; fitted to the board's exact shape):
+  Surface Rectangle   start point  431.1, -159.9, 0.5   (the board corner nearest the robot, on the right)
+                      length 258.0 (along X), width 206.4 (along Y)
+  then Set Position   orientation  0, 0, 1.4  degrees  (the board turned 1.4 deg from base +X)
+  The board's other corners: 426.1, 46.4 / 684.0, 52.8 / 689.0, -153.6
+
+Where P0 P1 P2 of the board then are (what the TCP touches):
+  P0  478.9,  -3.9, 0
+  P1  633.7,  -0.1, 0
+  P2  481.4, -107.0, 0

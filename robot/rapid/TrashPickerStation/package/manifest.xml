@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<DistributionPackage>
+  <Title>TrashPicker Station</Title>
+  <DisplayVersion>1.0.0</DisplayVersion>
+  <Creator>TrashPicker project</Creator>
+  <Description>Shows robot_trash_picker.py's snapshot frame on BoardOverlay and its point cloud as LiveCloud.</Description>
+  <DetailedDescription>Listens on 127.0.0.1:5003. On 'n' (camera) or at --frame (rosbag), robot/station_feed.py sends one request naming a floor picture and a point cloud of the same frame; this add-in puts the picture on the part BoardOverlay, with texture coordinates set from the part's own vertices, and the cloud in the point cloud LiveCloud, in the station frame, which is the robot's base frame. See STATION_SETUP.md in robot/rapid/TrashPickerStation.</DetailedDescription>
+  <Date>2026-11-24</Date>
+</DistributionPackage>

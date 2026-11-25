@@ -156,6 +156,13 @@ def with_grid(picture: np.ndarray) -> np.ndarray:
     return check
 
 
+def floor_picture(image: np.ndarray, T_base_cam: np.ndarray, intrinsics, targets=(),
+                  points=()) -> np.ndarray:
+    """The unturned floor picture with `points` and then `targets` drawn on it."""
+    picture = lay_on_floor(image, T_base_cam, intrinsics)
+    return draw_targets_on_floor(draw_points_on_floor(picture, points), targets)
+
+
 def write_floor_overlay(image: np.ndarray, T_base_cam: np.ndarray, intrinsics, targets=(),
                         out_dir: Path | None = None, label: str = "detection",
                         points=()) -> Path:
@@ -163,8 +170,7 @@ def write_floor_overlay(image: np.ndarray, T_base_cam: np.ndarray, intrinsics, t
 
     `targets` are a run's (crosses, axes, fingers); `points` are labelled marks, as a calibration's.
     """
-    picture = lay_on_floor(image, T_base_cam, intrinsics)
-    picture = draw_targets_on_floor(draw_points_on_floor(picture, points), targets)
+    picture = floor_picture(image, T_base_cam, intrinsics, targets, points)
     out_dir = Path(LIVE_DIR if out_dir is None else out_dir)
     history = out_dir / "history"
     history.mkdir(parents=True, exist_ok=True)

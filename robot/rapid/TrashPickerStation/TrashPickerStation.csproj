@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The RobotStudio add-in that shows robot_trash_picker.py's snapshot on BoardOverlay and as the
+       point cloud LiveCloud. See STATION_SETUP.md. Build with install.ps1 -Build, or:
+       dotnet build -c Release -p:RobotStudioBin="<RobotStudio>\Bin" -->
+  <PropertyGroup>
+    <!-- RobotStudio 2026 runs on .NET 10 (Bin\RobotStudio.runtimeconfig.json). -->
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <!-- GraphicControl, for the test pattern's top view, is a WinForms control. -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>TrashPickerStation</AssemblyName>
+    <RootNamespace>TrashPickerStation</RootNamespace>
+    <Nullable>disable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <Version>1.0.0</Version>
+    <RobotStudioBin Condition="'$(RobotStudioBin)' == ''">C:\Program Files (x86)\Development\RobotStudio2026\Bin</RobotStudioBin>
+    <!-- RobotStudio loads only the add-in's own DLL; everything else is already in its process. -->
+    <GenerateDependencyFile>false</GenerateDependencyFile>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="ABB.Robotics.Math">
+      <HintPath>$(RobotStudioBin)\ABB.Robotics.Math.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="ABB.Robotics.RobotStudio">
+      <HintPath>$(RobotStudioBin)\ABB.Robotics.RobotStudio.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="ABB.Robotics.RobotStudio.Stations">
+      <HintPath>$(RobotStudioBin)\ABB.Robotics.RobotStudio.Stations.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="ABB.Robotics.RobotStudio.Stations.Forms">
+      <HintPath>$(RobotStudioBin)\ABB.Robotics.RobotStudio.Stations.Forms.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="TrashPickerStation.rsaddin" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="package\**;bin\**;obj\**" />
+    <None Remove="package\**;bin\**;obj\**" />
+  </ItemGroup>
+</Project>

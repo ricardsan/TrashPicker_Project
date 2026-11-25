@@ -35,13 +35,22 @@ def _intrinsic(intrinsics, name: str) -> float:
     return float(intrinsics[name] if isinstance(intrinsics, dict) else getattr(intrinsics, name))
 
 
-def cloud_in_camera(metres: np.ndarray, intrinsics, stride: int = DEFAULT_STRIDE,
-                    max_range_m: float = MAX_RANGE_M) -> tuple[np.ndarray, np.ndarray]:
-    """(N x 3 points in the camera frame in metres, N x 2 their (row, column)), valid depth only."""
+def require_pinhole(intrinsics) -> None:
+    """ValueError unless the distortion coefficients are all zero, so the pinhole model is exact.
+
+    Also what keeps the floor picture and the cloud in step (station_feed.py): both are built with
+    the pinhole model, so neither may be used on a frame where it is not the camera's.
+    """
     coeffs = intrinsics["coeffs"] if isinstance(intrinsics, dict) else getattr(intrinsics, "coeffs", [])
     if any(coeffs):
         raise ValueError(f"distortion coefficients {list(coeffs)}: the pinhole deprojection here "
                          f"would be wrong for them")
+
+
+def cloud_in_camera(metres: np.ndarray, intrinsics, stride: int = DEFAULT_STRIDE,
+                    max_range_m: float = MAX_RANGE_M) -> tuple[np.ndarray, np.ndarray]:
+    """(N x 3 points in the camera frame in metres, N x 2 their (row, column)), valid depth only."""
+    require_pinhole(intrinsics)
     fx, fy = _intrinsic(intrinsics, "fx"), _intrinsic(intrinsics, "fy")
     ppx, ppy = _intrinsic(intrinsics, "ppx"), _intrinsic(intrinsics, "ppy")
     stride = max(1, int(stride))

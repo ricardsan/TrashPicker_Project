@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<RobotStudioAddIn xmlns="urn:abb-robotics-robotstudio-addin" autoLoad="true">
+  <DisplayName>TrashPicker Station</DisplayName>
+  <Description>Shows robot_trash_picker.py's snapshot on BoardOverlay and its point cloud as LiveCloud</Description>
+  <ApplicationId>com.trashpicker.station</ApplicationId>
+  <AddInType>General</AddInType>
+  <Platform>Any</Platform>
+  <Dependencies>Station</Dependencies>
+  <Assembly>
+    <FileName>TrashPickerStation.dll</FileName>
+    <Entrypoint>TrashPickerStation.StationAddin.AddinMain</Entrypoint>
+  </Assembly>
+</RobotStudioAddIn>

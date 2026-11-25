@@ -14,7 +14,11 @@ The robot end is robot/rapid/ArtCamera.modx, which has to be running on the cont
     python robot/robot_trash_picker.py --host 192.168.125.1 --calibration robot/calibration.txt
 
 The run: load the model and the frames, send the robot home, run inference. On the chosen frame, or
-when 'n' is pressed, measure every mask and sort nearest the camera first. Then for each target:
+when 'n' is pressed, measure every mask and sort nearest the camera first, and show the frame in the
+running RobotStudio station: on BoardOverlay, and as the point cloud LiveCloud (station_feed.py;
+needs the add-in in robot/rapid/TrashPickerStation, and --no-station turns it off; --hide-cloud
+and --hide-rgb hide either, sent to RobotStudio as the run starts). 'h' stops the thread that does
+this if RobotStudio hangs; the run carries on. Then for each target:
 over it, down, close the gripper, back up, to its class's drop location, open, home, and wait for
 'c' (next target) or 's' (stop). The list is not re-detected between picks.
 
@@ -25,6 +29,8 @@ The moving parts:
     frame_selection.py      rosbag or camera, and which frame
     perception.py           mask -> centroid, orientation, z, class, base position
     floor_overlay.py        on 'n', the frame laid on the floor for RobotStudio's surface
+    station_feed.py         on 'n', that picture and the point cloud pushed into RobotStudio
+    rapid/TrashPickerStation  the RobotStudio add-in that takes them
     pick_sequence.py        the motion sequence, the DUMMY DROP LOCATIONS, the grasp z PLACEHOLDER
     operator_keys.py        keys from the image window or the terminal
     align_to_recording.py   writes calibration_rosbag_demo.txt; not part of a run
@@ -33,6 +39,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 
 import cv2
@@ -47,6 +54,7 @@ from robot.art_camera_client import (DEFAULT_HOST, DEFAULT_PORT,  # noqa: E402
 from robot.extrinsics import (HARDCODED_NAME, HARDCODED_T_BASE_CAM,  # noqa: E402
                               check_transform, is_synthetic, load_T_base_cam)
 from robot.floor_overlay import write_floor_overlay  # noqa: E402
+from robot.station_feed import STOP_KEY, STOP_KEY_HELP, StationFeed  # noqa: E402
 from robot.frame_selection import (open_recording, preview_until,  # noqa: E402
                                    resolve_frame_index, settle_frames, started)
 from robot.experiment import (DEFAULT_DIR as EXPERIMENTS_DIR, ExperimentLog,  # noqa: E402
@@ -99,6 +107,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--viz", action="store_true",
                    help="open a live 3D view (Rerun) of the RGB image, point cloud and planned "
                         "grasps in the base frame, to run beside RobotStudio")
+    p.add_argument("--no-station", action="store_true",
+                   help="do not push the snapshot frame and its point cloud into RobotStudio "
+                        "(BoardOverlay and LiveCloud, through robot/rapid/TrashPickerStation)")
+    p.add_argument("--hide-cloud", action="store_true",
+                   help="hide the point cloud LiveCloud in RobotStudio (it is still updated)")
+    p.add_argument("--hide-rgb", action="store_true",
+                   help="hide the RGB frame on BoardOverlay in RobotStudio (it is still updated)")
     return p
 
 
@@ -110,18 +125,24 @@ def check_args(parser: argparse.ArgumentParser, args) -> None:
             if getattr(args, flag) is not None:
                 parser.error(f"--{flag.replace('_', '-')} means nothing with --mock, which loads "
                              f"no model and no frames")
-        if args.viz:
-            parser.error("--viz means nothing with --mock, which loads no model and no frames")
+        for flag in ("viz", "no_station", "hide_cloud", "hide_rgb"):
+            if getattr(args, flag):
+                parser.error(f"--{flag.replace('_', '-')} means nothing with --mock, which loads "
+                             f"no model and no frames")
     if args.frame is not None and args.rosbag is None:
         parser.error("--frame needs --rosbag: with the camera, the frame is the one on screen "
                      "when 'n' is pressed")
+    if args.no_station and (args.hide_cloud or args.hide_rgb):
+        parser.error("--hide-cloud and --hide-rgb need the station: --no-station sends nothing "
+                     "to RobotStudio")
     if (args.ground_truth or args.experiments_dir) and not args.experiment:
         parser.error("--ground-truth and --experiments-dir need --experiment NAME")
 
 
-def show_in_station(snapshot, T_base_cam) -> None:
-    """The detection frame laid on the floor, for the textured surface in RobotStudio.
+def show_in_station(snapshot, T_base_cam, station=None) -> None:
+    """The detection frame laid on the floor, kept as floor.png and in history/.
 
+    `station` is the StationFeed that also puts it on BoardOverlay, or None with --no-station.
     A picture that cannot be written costs a warning, never the run.
     """
     try:
@@ -130,8 +151,22 @@ def show_in_station(snapshot, T_base_cam) -> None:
     except Exception as failure:                    # noqa: BLE001 - only a picture
         print(f"WARNING: no floor picture for RobotStudio: {failure}")
         return
-    print(f"floor picture for RobotStudio: {floor}  (reload it as the surface's texture; "
-          f"the red crosses are where the TCP is sent)")
+    if station is None:
+        print(f"floor picture for RobotStudio: {floor}  (reload it as the surface's texture; "
+              f"the red crosses are where the TCP is sent)")
+    else:
+        print(f"floor picture, also sent to BoardOverlay: {floor}  (the red crosses are where the "
+              f"TCP is sent)")
+
+
+@contextmanager
+def station_waits(station, keys):
+    """On the way out of a session, let a frame on its way reach RobotStudio: the send is a daemon
+    thread, which the exit would cut off. Only on a normal end: an error or Ctrl+C is reported at
+    once rather than after RobotStudio's timeout."""
+    yield
+    if station is not None:
+        station.wait(keys)
 
 
 def run_pick_session(args) -> int:
@@ -158,6 +193,11 @@ def run_pick_session(args) -> int:
     if args.viz:
         from robot.live_view import LiveView
         view = LiveView(T_base_cam)
+    station = None
+    if not args.no_station:
+        station = StationFeed(T_base_cam, show_cloud=not args.hide_cloud,
+                              show_floor=not args.hide_rgb)
+        station.set_visibility()
 
     if args.rosbag:
         source = open_recording(args.rosbag)
@@ -170,9 +210,13 @@ def run_pick_session(args) -> int:
         source, stop_at = RealSenseSource(), None
 
     keys = OperatorKeys()
+    if station is not None:
+        keys.on(STOP_KEY, station.stop)
     print(f"connecting to {args.host}:{args.port} ...")
-    # Pumping the window while a move is awaited, or Windows marks it as Not Responding.
-    with ArtCameraClient(args.host, args.port, on_wait=lambda: cv2.waitKey(1)) as robot:
+    # Pumping the window while a move is awaited, or Windows marks it as Not Responding. Through
+    # keys, so 'h' is heard mid-move too.
+    with ArtCameraClient(args.host, args.port, on_wait=keys.pump) as robot, \
+            station_waits(station, keys):
         print(f"loading {weights}")
         detector = YoloDetector(weights, DEFAULT_CONF if args.conf is None else args.conf)
         print(f"frames from: {source.describe()}")
@@ -190,8 +234,18 @@ def run_pick_session(args) -> int:
                       "The keys work in the image window or in this terminal.")
             else:
                 print(f"\nRunning inference up to frame {stop_at}. Press 'q' or ESC to quit.")
+            if station is not None:
+                shown = [name for name, visible in (("on BoardOverlay", station.show_floor),
+                                                     ("as LiveCloud", station.show_cloud))
+                         if visible]
+                print(f"That frame is also sent to RobotStudio, shown "
+                      f"{' and '.join(shown) or 'nowhere (both hidden)'}. {STOP_KEY_HELP}; "
+                      f"it works at every prompt.")
+                print("NOTE: the picture is laid on the floor rectangle FLOOR_X_MM/FLOOR_Y_MM in "
+                      "robot/floor_overlay.py. If BoardOverlay is moved in RobotStudio, the code "
+                      "must change too: see robot/rapid/TrashPickerStation/BOARD_OVERLAY_MOVE.md.")
             snapshot = preview_until(source, detector, T_base_cam, keys, stop_at=stop_at,
-                                     view=view)
+                                     view=view, station=station)
 
         if snapshot is None:
             print("Quit before picking anything. The robot is at home.")
@@ -204,7 +258,7 @@ def run_pick_session(args) -> int:
             print("Nothing to pick. The robot is at home.")
             return 0
         print(format_targets(snapshot.targets))
-        show_in_station(snapshot, T_base_cam)
+        show_in_station(snapshot, T_base_cam, station)
 
         log = None
         if args.experiment:

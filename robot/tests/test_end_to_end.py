@@ -5,7 +5,9 @@ the fake controller, and skip if either is not on this machine.
 """
 from __future__ import annotations
 
+import functools
 import json
+import time
 
 import cv2
 import numpy as np
@@ -17,9 +19,12 @@ from robot import pick_sequence
 from robot.extrinsics import DEFAULT_CALIBRATION, HARDCODED_T_BASE_CAM, load_T_base_cam
 from robot.art_camera_client import MOCK_STEPS
 from robot.frame_selection import EXPORT_DIR, SETTLE_S
-from robot.mock.fake_rapid import FakeRapid, parse_message
+from robot.mock.fake_rapid import DROP, FakeRapid, parse_message
 from robot.operator_keys import OperatorKeys
+from robot.station_feed import StationFeed
 from synthetic import FakeDepth, FakeDetector, FakeSource, Intrinsics, detection, disc_mask
+# Imported at collection, before the autouse fixture swaps _exchange for a recorder.
+from test_station_feed import REAL_EXCHANGE, FakeAddin
 
 HOME, GRIP_OPEN, GRIP_CLOSE = "-1,0,0,0", "-2,0,0,0", "-3,0,0,0"
 DEMO_CALIBRATION = DEFAULT_CALIBRATION.parent / "calibration_rosbag_demo.txt"
@@ -37,6 +42,11 @@ INTR = Intrinsics()
     ["--mock", "--frame", "3"],
     ["--mock", "--calibration", "x.txt"],
     ["--mock", "--conf", "0.5"],
+    ["--mock", "--no-station"],
+    ["--mock", "--hide-cloud"],
+    ["--mock", "--hide-rgb"],
+    ["--rosbag", "clip", "--no-station", "--hide-rgb"],
+    ["--rosbag", "clip", "--no-station", "--hide-cloud"],
     ["--frame", "3"],
 ])
 def test_flags_that_mean_nothing_together_are_refused(argv):
@@ -194,6 +204,94 @@ def test_a_camera_that_is_not_there_is_a_message_and_the_robot_does_not_move(rap
     with pytest.raises(SystemExit, match="could not start.*No device connected"):
         cli.main(["--port", str(rapid.port), *args])
     assert rapid.received == []
+
+
+def test_the_chosen_frame_and_only_it_is_sent_to_robotstudio(rapid, fake_inputs, monkeypatch,
+                                                            capsys, station_requests):
+    args, _ = fake_inputs
+    monkeypatch.setattr(OperatorKeys, "wait_for", lambda self, allowed: "s")
+    assert cli.main(["--port", str(rapid.port), "--rosbag", "clip", "--frame", "1", *args]) == 0
+    assert [request["cmd"] for request in station_requests] == ["visibility", "show"]
+    request = station_requests[1]
+    assert request["frame"] == 1
+    assert request["part"] == "BoardOverlay" and request["points"] > 0
+    out = capsys.readouterr().out
+    assert "'h' stops the RobotStudio display thread" in out
+
+
+def test_the_real_send_finishes_before_the_program_exits(rapid, fake_inputs, monkeypatch, capsys):
+    """The thread is a daemon: without the wait on the way out, a quick exit would cut it off."""
+    monkeypatch.setattr(StationFeed, "_exchange", REAL_EXCHANGE)
+    addin = FakeAddin("ok")
+    try:
+        monkeypatch.setattr(cli, "StationFeed", functools.partial(StationFeed, port=addin.port))
+        monkeypatch.setattr(OperatorKeys, "wait_for", lambda self, allowed: "s")
+        assert cli.main(["--port", str(rapid.port), "--rosbag", "clip", "--frame", "2", *args_of(
+            fake_inputs)]) == 0
+    finally:
+        addin.close()
+    assert [request.get("frame") for request in addin.requests] == [None, 2]   # visibility first
+    assert "shown in RobotStudio: frame 2" in capsys.readouterr().out
+
+
+def test_a_robot_error_is_not_held_up_by_a_hung_robotstudio(fake_inputs, monkeypatch, capsys):
+    """The wait on the way out is for a normal end only: a lost controller is reported at once."""
+    monkeypatch.setattr(StationFeed, "_exchange", REAL_EXCHANGE)
+    hung = FakeAddin("silent")
+    script = {2: DROP}                          # home, grip open, then the controller hangs up
+    try:
+        monkeypatch.setattr(cli, "StationFeed",
+                            functools.partial(StationFeed, port=hung.port, timeout_s=30.0))
+        with FakeRapid(script=script) as rapid:
+            start = time.monotonic()
+            assert cli.main(["--port", str(rapid.port), "--rosbag", "clip", *args_of(
+                fake_inputs)]) == 1
+            assert time.monotonic() - start < 10.0
+    finally:
+        hung.close()
+    assert "STOPPED" in capsys.readouterr().err
+
+
+def args_of(fake_inputs):
+    return fake_inputs[0]
+
+
+@pytest.mark.parametrize("flags, cloud, floor", [
+    ([], True, True),                    # both stated, so an earlier run's --hide-* is undone
+    (["--hide-cloud"], False, True),
+    (["--hide-rgb"], True, False),
+    (["--hide-cloud", "--hide-rgb"], False, False),
+])
+def test_the_hide_options_are_sent_at_start_and_with_the_frame(rapid, fake_inputs, monkeypatch,
+                                                               capsys, station_requests, flags,
+                                                               cloud, floor):
+    args, _ = fake_inputs
+    monkeypatch.setattr(OperatorKeys, "wait_for", lambda self, allowed: "s")
+    assert cli.main(["--port", str(rapid.port), "--rosbag", "clip", "--frame", "1", *flags,
+                     *args]) == 0
+    start, frame = station_requests
+    assert start == {"cmd": "visibility", "part": "BoardOverlay", "cloud_visible": cloud,
+                     "floor_visible": floor}
+    assert (frame["cmd"], frame["cloud_visible"], frame["floor_visible"]) == ("show", cloud, floor)
+    out = capsys.readouterr().out
+    assert ("as LiveCloud" in out) is cloud and ("on BoardOverlay" in out) is floor
+
+
+def test_the_visibility_goes_out_before_the_robot_is_contacted(fake_inputs, monkeypatch,
+                                                               station_requests):
+    """'Sent when starting': before connecting, so it is there even if the controller is not."""
+    args, _ = fake_inputs
+    with FakeRapid() as rapid:
+        port = rapid.port
+    assert cli.main(["--port", str(port), "--rosbag", "clip", "--hide-cloud", *args]) == 1
+    assert [request["cmd"] for request in station_requests] == ["visibility"]
+
+
+def test_no_station_sends_nothing(rapid, fake_inputs, monkeypatch, station_requests):
+    args, _ = fake_inputs
+    monkeypatch.setattr(OperatorKeys, "wait_for", lambda self, allowed: "s")
+    assert cli.main(["--port", str(rapid.port), "--rosbag", "clip", "--no-station", *args]) == 0
+    assert station_requests == []
 
 
 @pytest.mark.parametrize("frame, warned", [("0", True), ("1", False)])

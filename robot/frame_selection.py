@@ -109,12 +109,14 @@ def started(source):
 
 
 def preview_until(source, detector, T_base_cam, keys, *, stop_at: int | None = None,
-                  window: str = WINDOW, view=None) -> Snapshot | None:
+                  window: str = WINDOW, view=None, station=None) -> Snapshot | None:
     """Show inference frame by frame, and return the Snapshot of the frame to work from.
 
     With `stop_at` that is frame number `stop_at`; without it, the frame on screen when 'n' is
     pressed, once the depth has settled. None means the operator quit. `source` must be running:
-    see started(). `view`, a live_view.LiveView, also gets every frame.
+    see started(). `view`, a live_view.LiveView, also gets every frame. `station`, a
+    station_feed.StationFeed, gets only the frame 'n' is accepted on -- with or without anything
+    pickable in it -- or frame `stop_at`.
     """
     settling = settle_frames(source)
     # A key pressed while the robot was going home was not pressed at this picture.
@@ -153,10 +155,14 @@ def preview_until(source, detector, T_base_cam, keys, *, stop_at: int | None = N
                 print(f"The depth is still settling (frame {index + 1} of {settling}). "
                       f"Press 'n' again in a moment.")
                 continue
+            if station is not None:
+                station.show(index, image, depth_frame, intrinsics, targets, annotated)
             if not targets:
                 print("Nothing pickable in this frame. Press 'n' again when there is.")
                 continue
         elif index != stop_at:
             continue
+        elif station is not None:
+            station.show(index, image, depth_frame, intrinsics, targets, annotated)
         return Snapshot(index, annotated, targets, dropped, image=image,
                         metres=depth_map_metres(depth_frame), intrinsics=intrinsics)

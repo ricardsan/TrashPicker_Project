@@ -9,6 +9,7 @@ clip. Nothing here needs a robot, a camera or a display: the controller is mock/
 from __future__ import annotations
 
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -32,6 +33,26 @@ def floor_pictures_in_tmp(monkeypatch, tmp_path):
     """A run writes the floor picture for RobotStudio; in a test it goes to tmp, not the repo."""
     monkeypatch.setattr("robot.floor_overlay.LIVE_DIR", tmp_path / "robotstudio_live")
     return tmp_path / "robotstudio_live"
+
+
+@pytest.fixture(autouse=True)
+def station_requests(monkeypatch):
+    """A run pushes its snapshot to the RobotStudio add-in; in a test it is recorded, never sent,
+    so a RobotStudio open on this machine is not touched. test_station_feed puts the real one back
+    where it is the thing under test."""
+    sent = []
+
+    def record(self, request):
+        sent.append(request)
+        self.last_reply = {"ok": True, "points": request.get("points")}
+
+    monkeypatch.setattr("robot.station_feed.StationFeed._exchange", record)
+    yield sent
+    # A run that ends on an error does not wait for its send thread. Finish it here, or it records
+    # into the next test's list.
+    for thread in threading.enumerate():
+        if thread.name == "robotstudio-station":
+            thread.join(timeout=5.0)
 
 
 @pytest.fixture
